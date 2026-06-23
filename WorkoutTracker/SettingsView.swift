@@ -338,7 +338,7 @@ struct AddHistoricalWorkoutView: View {
                         // Date Picker
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Workout Date")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             DatePicker("", selection: $workoutDate, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
                                 .datePickerStyle(.compact)
@@ -353,7 +353,7 @@ struct AddHistoricalWorkoutView: View {
                         // Exercise Picker
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Exercise")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             
                             Menu {
@@ -390,7 +390,7 @@ struct AddHistoricalWorkoutView: View {
                         // Session Notes
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Session Notes")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             TextEditor(text: $sessionNotes)
                                 .frame(height: 80)
@@ -407,7 +407,7 @@ struct AddHistoricalWorkoutView: View {
                         // Save Button
                         Button(action: saveHistoricalWorkout) {
                             Text("Save Historical Workout")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -435,13 +435,13 @@ struct AddHistoricalWorkoutView: View {
     var cardioInputSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Cardio Metrics")
-                .font(.headline)
+                .appHeadingStyle()
                 .foregroundColor(themeManager.primaryText)
             
             HStack(spacing: 15) {
                 VStack(alignment: .leading) {
                     Text("Warm-up (min)")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $warmUpTime, format: .number)
                         .keyboardType(.decimalPad)
@@ -453,7 +453,7 @@ struct AddHistoricalWorkoutView: View {
                 
                 VStack(alignment: .leading) {
                     Text("Run (min)")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $runningTime, format: .number)
                         .keyboardType(.decimalPad)
@@ -467,7 +467,7 @@ struct AddHistoricalWorkoutView: View {
             HStack(spacing: 15) {
                 VStack(alignment: .leading) {
                     Text("Cool-down (min)")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $coolDownTime, format: .number)
                         .keyboardType(.decimalPad)
@@ -479,7 +479,7 @@ struct AddHistoricalWorkoutView: View {
                 
                 VStack(alignment: .leading) {
                     Text("Speed")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $runningSpeed, format: .number)
                         .keyboardType(.decimalPad)
@@ -511,13 +511,13 @@ struct AddHistoricalWorkoutView: View {
     var strengthInputSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Sets")
-                .font(.headline)
+                .appHeadingStyle()
                 .foregroundColor(themeManager.primaryText)
             
             // Machine Settings
             VStack(alignment: .leading, spacing: 8) {
                 Text("Machine Settings")
-                    .font(.caption)
+                    .appCaptionStyle()
                     .foregroundColor(themeManager.secondaryText)
                 TextField("e.g. Seat Position 4", text: $machineSettings)
                     .padding()
@@ -537,7 +537,7 @@ struct AddHistoricalWorkoutView: View {
                             Button(action: { sets.remove(at: index) }) {
                                 Image(systemName: "trash")
                                     .foregroundColor(.red)
-                                    .font(.caption)
+                                    .appCaptionStyle()
                             }
                         }
                     }
@@ -545,7 +545,7 @@ struct AddHistoricalWorkoutView: View {
                     HStack(spacing: 15) {
                         VStack(alignment: .leading) {
                             Text("Reps")
-                                .font(.caption)
+                                .appCaptionStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             TextField("0", value: $sets[index].reps, format: .number)
                                 .keyboardType(.numberPad)
@@ -557,7 +557,7 @@ struct AddHistoricalWorkoutView: View {
                         
                         VStack(alignment: .leading) {
                             Text("Weight (lbs)")
-                                .font(.caption)
+                                .appCaptionStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             TextField("0", value: $sets[index].weight, format: .number)
                                 .keyboardType(.decimalPad)
@@ -570,7 +570,7 @@ struct AddHistoricalWorkoutView: View {
                     
                     HStack {
                         Text("Difficulty")
-                            .font(.caption)
+                            .appCaptionStyle()
                             .foregroundColor(themeManager.secondaryText)
                         Spacer()
                         DifficultyDots(rating: sets[index].difficulty, size: 18, interactive: true) { newRating in
@@ -655,7 +655,7 @@ struct LegendItem: View {
                 .fill(color)
                 .frame(width: 10, height: 10)
             Text(label)
-                .font(.caption)
+                .appCaptionStyle()
                 .foregroundColor(themeManager.secondaryText)
         }
     }

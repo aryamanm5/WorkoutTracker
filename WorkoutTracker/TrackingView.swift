@@ -72,7 +72,7 @@ struct TrackingView: View {
         HStack(spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("🔥 Current Streak")
-                    .font(.subheadline)
+                    .appBodyStyle()
                     .foregroundColor(themeManager.secondaryText)
                 Text("\(currentStreak) days")
                     .font(.system(size: 32, weight: .bold, design: .rounded))
@@ -83,7 +83,7 @@ struct TrackingView: View {
             
             VStack(alignment: .trailing, spacing: 4) {
                 Text("Total Workouts")
-                    .font(.subheadline)
+                    .appBodyStyle()
                     .foregroundColor(themeManager.secondaryText)
                 Text("\(totalWorkouts)")
                     .font(.system(size: 32, weight: .bold, design: .rounded))
@@ -91,8 +91,7 @@ struct TrackingView: View {
             }
         }
         .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
         .padding(.top, 10)
     }
@@ -126,7 +125,7 @@ struct TrackingView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
                 ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
                     Text(day)
-                        .font(.caption)
+                        .appCaptionStyle()
                         .fontWeight(.semibold)
                         .foregroundColor(themeManager.secondaryText)
                 }
@@ -157,8 +156,7 @@ struct TrackingView: View {
             .padding(.horizontal)
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
@@ -168,14 +166,14 @@ struct TrackingView: View {
         return VStack(alignment: .leading, spacing: 15) {
             HStack {
                 Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
-                    .font(.headline)
+                    .appHeadingStyle()
                     .foregroundColor(themeManager.primaryText)
                 
                 Spacer()
                 
                 if !sessions.isEmpty {
                     Text("Swipe to delete")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                 }
             }
@@ -212,15 +210,14 @@ struct TrackingView: View {
             }
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
     var progressChartSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Progress Overview")
-                .font(.headline)
+                .appHeadingStyle()
                 .foregroundColor(themeManager.primaryText)
                 .padding(.horizontal)
             
@@ -252,15 +249,14 @@ struct TrackingView: View {
             }
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
     var exerciseListSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Exercise Progress")
-                .font(.headline)
+                .appHeadingStyle()
                 .foregroundColor(themeManager.primaryText)
                 .padding(.horizontal)
             
@@ -269,10 +265,10 @@ struct TrackingView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(exercise.name)
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.primaryText)
                             Text("\(exercise.sessions.count) Sessions Logged")
-                                .font(.subheadline)
+                                .appBodyStyle()
                                 .foregroundColor(themeManager.secondaryText)
                         }
                         Spacer()
@@ -287,8 +283,7 @@ struct TrackingView: View {
             }
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
@@ -465,18 +460,18 @@ struct SessionRowView: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(session.exercise?.name ?? "Unknown")
-                    .font(.headline)
+                    .appHeadingStyle()
                     .foregroundColor(themeManager.primaryText)
                 
                 if let exercise = session.exercise, exercise.isCardio {
                     if let run = session.runningTime {
                         Text("\(run, specifier: "%.1f") min run")
-                            .font(.caption)
+                            .appCaptionStyle()
                             .foregroundColor(themeManager.secondaryText)
                     }
                 } else {
                     Text("\(session.sets.count) sets")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                 }
             }
@@ -505,12 +500,12 @@ struct SessionDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(session.exercise?.name ?? "Unknown Exercise")
-                            .font(.title)
+                            .appLargeTitleStyle()
                             .fontWeight(.bold)
                             .foregroundColor(themeManager.primaryText)
                         
                         Text(session.date.formatted(date: .long, time: .shortened))
-                            .font(.subheadline)
+                            .appBodyStyle()
                             .foregroundColor(themeManager.secondaryText)
                     }
                     .padding()
@@ -524,7 +519,7 @@ struct SessionDetailView: View {
                     if !session.notes.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Session Notes")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.secondaryText)
                             Text(session.notes)
                                 .foregroundColor(themeManager.primaryText)
@@ -612,9 +607,9 @@ struct SessionDetailView: View {
                             Spacer()
                             HStack(spacing: 4) {
                                 Image(systemName: "timer")
-                                    .font(.caption)
+                                    .appCaptionStyle()
                                 Text("\(rest)s rest")
-                                    .font(.caption)
+                                    .appCaptionStyle()
                             }
                             .foregroundColor(.orange)
                         }
@@ -622,7 +617,7 @@ struct SessionDetailView: View {
                     
                     if !set.notes.isEmpty {
                         Text(set.notes)
-                            .font(.caption)
+                            .appCaptionStyle()
                             .foregroundColor(themeManager.secondaryText)
                             .italic()
                     }
@@ -694,7 +689,7 @@ struct EditSessionView: View {
                     }
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Session Notes").font(.headline).foregroundColor(themeManager.secondaryText)
+                        Text("Session Notes").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                         TextEditor(text: $sessionNotes)
                             .frame(height: 80)
                             .padding(8)
@@ -706,7 +701,7 @@ struct EditSessionView: View {
                     
                     Button(action: saveChanges) {
                         Text("Save Changes")
-                            .font(.headline)
+                            .appHeadingStyle()
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding()
@@ -726,11 +721,11 @@ struct EditSessionView: View {
     
     var editCardioInterface: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Cardio Metrics").font(.headline).foregroundColor(themeManager.primaryText)
+            Text("Cardio Metrics").appHeadingStyle().foregroundColor(themeManager.primaryText)
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Warm-up (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Warm-up (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $warmUpTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -739,7 +734,7 @@ struct EditSessionView: View {
                         .foregroundColor(themeManager.primaryText)
                 }
                 VStack(alignment: .leading) {
-                    Text("Run (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Run (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $runningTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -751,7 +746,7 @@ struct EditSessionView: View {
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Cool-down (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Cool-down (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $coolDownTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -760,7 +755,7 @@ struct EditSessionView: View {
                         .foregroundColor(themeManager.primaryText)
                 }
                 VStack(alignment: .leading) {
-                    Text("Speed").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Speed").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $runningSpeed, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -772,7 +767,7 @@ struct EditSessionView: View {
             
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Intensity").font(.headline).foregroundColor(themeManager.primaryText)
+                    Text("Intensity").appHeadingStyle().foregroundColor(themeManager.primaryText)
                     Spacer()
                     Text("\(Int(intensityRating))/10").fontWeight(.bold).foregroundColor(Color.appAccent)
                 }
@@ -788,7 +783,7 @@ struct EditSessionView: View {
     var editStrengthInterface: some View {
         VStack(alignment: .leading, spacing: 15) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Machine Settings").font(.headline).foregroundColor(themeManager.secondaryText)
+                Text("Machine Settings").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                 TextField("e.g. Seat Position 4", text: $machineSettings)
                     .padding()
                     .background(themeManager.cardBackground)
@@ -796,7 +791,7 @@ struct EditSessionView: View {
                     .foregroundColor(themeManager.primaryText)
             }
             
-            Text("Sets").font(.headline).foregroundColor(themeManager.secondaryText)
+            Text("Sets").appHeadingStyle().foregroundColor(themeManager.secondaryText)
             
             ForEach($editedSets) { $set in
                 VStack(alignment: .leading, spacing: 10) {
@@ -813,7 +808,7 @@ struct EditSessionView: View {
                     
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Reps").font(.caption).foregroundColor(themeManager.secondaryText)
+                            Text("Reps").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                             TextField("0", value: $set.reps, format: .number)
                                 .keyboardType(.numberPad)
                                 .padding(10)
@@ -823,7 +818,7 @@ struct EditSessionView: View {
                         }
                         
                         VStack(alignment: .leading) {
-                            Text("Weight").font(.caption).foregroundColor(themeManager.secondaryText)
+                            Text("Weight").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                             TextField("0", value: $set.weight, format: .number)
                                 .keyboardType(.decimalPad)
                                 .padding(10)
@@ -834,7 +829,7 @@ struct EditSessionView: View {
                     }
                     
                     HStack {
-                        Text("Difficulty").font(.caption).foregroundColor(themeManager.secondaryText)
+                        Text("Difficulty").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                         Spacer()
                         DifficultyDots(rating: set.difficulty, size: 20, interactive: true) { newRating in
                             set.difficulty = newRating

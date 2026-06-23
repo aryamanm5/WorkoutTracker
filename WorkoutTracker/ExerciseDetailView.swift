@@ -43,7 +43,7 @@ struct ExerciseDetailView: View {
                         HStack {
                             Image(systemName: "gearshape.fill").foregroundColor(.gray)
                             Text(session.machineSettings)
-                                .font(.subheadline)
+                                .appBodyStyle()
                         }
                     }
                     
@@ -62,7 +62,7 @@ struct ExerciseDetailView: View {
                     }
                 } header: {
                     Text(session.date, style: .date)
-                        .font(.headline)
+                        .appHeadingStyle()
                         .foregroundColor(.primary)
                 }
             }

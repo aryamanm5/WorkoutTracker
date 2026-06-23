@@ -27,6 +27,7 @@ struct WorkoutTrackerApp: App {
                 .onAppear {
                     viewModel.processMissingDays(context: container.mainContext)
                 }
+                .font(.appBody)
         }
     }
     

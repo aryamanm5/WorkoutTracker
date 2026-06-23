@@ -20,7 +20,7 @@ struct CurrentWorkoutView: View {
                         // Header Gradient Card
                         VStack(spacing: 10) {
                             Text("Ready to crush it?")
-                                .font(.subheadline)
+                                .appBodyStyle()
                                 .foregroundColor(.white.opacity(0.8))
                                 .textCase(.uppercase)
                             
@@ -30,7 +30,7 @@ struct CurrentWorkoutView: View {
                             
                             if selectedWorkoutType != .rest {
                                 Text("Let's build some muscle.")
-                                    .font(.body)
+                                    .appBodyStyle()
                                     .foregroundColor(.white.opacity(0.9))
                             }
                         }
@@ -47,7 +47,7 @@ struct CurrentWorkoutView: View {
                         // Override Selection
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Change Today's Split")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.secondaryText)
                                 .padding(.horizontal)
                             
@@ -147,7 +147,7 @@ struct ExerciseListView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack {
                                 Text(exercise.name)
-                                    .font(.headline)
+                                    .appHeadingStyle()
                                     .foregroundColor(themeManager.primaryText)
                                 if exercise.isCardio {
                                     Image(systemName: "figure.run")
@@ -158,7 +158,7 @@ struct ExerciseListView: View {
                             
                             if exercise.shouldIncreaseWeight, let suggested = exercise.suggestedNextWeight {
                                 Text("Suggested: \(suggested, specifier: "%.1f") lbs")
-                                    .font(.caption)
+                                    .appCaptionStyle()
                                     .foregroundColor(.green)
                             }
                         }
@@ -219,7 +219,7 @@ struct ExerciseHistoryView: View {
                 if let previousSession = viewModel.getPreviousSession(for: exercise) {
                     VStack(alignment: .leading, spacing: 15) {
                         Text("Last Session: \(previousSession.date.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.subheadline)
+                            .appBodyStyle()
                             .foregroundColor(themeManager.secondaryText)
                             .textCase(.uppercase)
                         
@@ -253,31 +253,30 @@ struct ExerciseHistoryView: View {
                                         DifficultyDots(rating: set.difficulty, size: 8)
                                         if let rest = set.restTimeSeconds {
                                             Text("\(rest)s")
-                                                .font(.caption)
+                                                .appCaptionStyle()
                                                 .foregroundColor(.orange)
                                         }
                                     }
                                     if !set.notes.isEmpty {
                                         Text(set.notes)
-                                            .font(.caption)
+                                            .appCaptionStyle()
                                             .foregroundColor(themeManager.secondaryText)
                                             .italic()
                                     }
                                 }
-                                .font(.body)
+                                .appBodyStyle()
                             }
                         }
                         
                         if !previousSession.notes.isEmpty {
                             Divider().background(themeManager.secondaryText)
                             Text("Session Notes: \(previousSession.notes)")
-                                .font(.caption)
+                                .appCaptionStyle()
                                 .foregroundColor(themeManager.secondaryText)
                         }
                     }
                     .padding()
-                    .background(themeManager.cardBackground)
-                    .cornerRadius(16)
+                    .appCard()
                     .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 2)
                     .padding(.horizontal)
                     .padding(.top, previousSession.exercise?.shouldIncreaseWeight == true ? 0 : 20)
@@ -289,7 +288,7 @@ struct ExerciseHistoryView: View {
                         Text("No previous history for \(exercise.name).")
                             .foregroundColor(themeManager.secondaryText)
                         Text("Time to set your baseline!")
-                            .font(.headline)
+                            .appHeadingStyle()
                             .foregroundColor(themeManager.primaryText)
                     }
                     .frame(maxWidth: .infinity)
@@ -478,7 +477,7 @@ struct WorkoutLoggingView: View {
                     
                     // Session Notes Section
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Session Notes").font(.headline).foregroundColor(themeManager.secondaryText)
+                        Text("Session Notes").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                         TextEditor(text: $sessionNotes)
                             .frame(height: 60)
                             .padding(8)
@@ -491,7 +490,7 @@ struct WorkoutLoggingView: View {
                     // Recorded Sets Summary
                     if !recordedSets.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Completed Sets").font(.headline).foregroundColor(themeManager.secondaryText)
+                            Text("Completed Sets").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                             
                             ForEach(recordedSets) { set in
                                 HStack {
@@ -507,7 +506,7 @@ struct WorkoutLoggingView: View {
                                     DifficultyDots(rating: set.difficulty, size: 6)
                                     if let rest = set.restTimeSeconds {
                                         Text("\(rest)s")
-                                            .font(.caption)
+                                            .appCaptionStyle()
                                             .foregroundColor(.orange)
                                     }
                                 }
@@ -515,7 +514,7 @@ struct WorkoutLoggingView: View {
                                 
                                 if !set.notes.isEmpty {
                                     Text(set.notes)
-                                        .font(.caption)
+                                        .appCaptionStyle()
                                         .foregroundColor(themeManager.secondaryText)
                                         .italic()
                                 }
@@ -533,7 +532,7 @@ struct WorkoutLoggingView: View {
                         if !exercise.isCardio {
                             Button(action: saveNextSet) {
                                 Text("Save Set & Next")
-                                    .font(.headline)
+                                    .appHeadingStyle()
                                     .foregroundColor(canSaveSet ? Color.appAccent : themeManager.secondaryText)
                                     .frame(maxWidth: .infinity)
                                     .padding()
@@ -545,7 +544,7 @@ struct WorkoutLoggingView: View {
                         
                         Button(action: saveAndFinish) {
                             Text("Finish Exercise")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -617,7 +616,7 @@ struct WorkoutLoggingView: View {
                     .foregroundColor(themeManager.primaryText)
                 Spacer()
                 Text("\(currentSetNumber)")
-                    .font(.title)
+                    .appLargeTitleStyle()
                     .fontWeight(.heavy)
                     .foregroundColor(Color.appAccent)
                     .padding(.horizontal, 15)
@@ -628,7 +627,7 @@ struct WorkoutLoggingView: View {
             
             // Reps Counter
             VStack(alignment: .leading, spacing: 10) {
-                Text("Reps Completed").font(.headline).foregroundColor(themeManager.secondaryText)
+                Text("Reps Completed").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                 HStack {
                     Button(action: { if reps > 0 { reps -= 1; triggerHaptic() } }) {
                         Image(systemName: "minus.circle.fill").font(.system(size: 40)).foregroundColor(.red.opacity(0.8))
@@ -643,17 +642,16 @@ struct WorkoutLoggingView: View {
                     }
                 }
                 .padding()
-                .background(themeManager.cardBackground)
-                .cornerRadius(16)
+                .appCard()
             }
             
             // Difficulty Rating
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Difficulty").font(.headline).foregroundColor(themeManager.secondaryText)
+                    Text("Difficulty").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                     Spacer()
                     Text(difficultyLabel(for: currentDifficulty))
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(difficultyColor(for: currentDifficulty))
                 }
                 
@@ -664,18 +662,17 @@ struct WorkoutLoggingView: View {
                 .frame(maxWidth: .infinity)
             }
             .padding()
-            .background(themeManager.cardBackground)
-            .cornerRadius(16)
+            .appCard()
             
             // Weight Input / Plate Calculator
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("Weight (lbs)").font(.headline).foregroundColor(themeManager.secondaryText)
+                    Text("Weight (lbs)").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                     Spacer()
                     Toggle("Plate Math", isOn: $showPlateCalculator.animation(.spring()))
                         .labelsHidden()
                         .tint(.appAccent)
-                    Text("Plate Math").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Plate Math").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                 }
                 
                 if showPlateCalculator {
@@ -695,7 +692,7 @@ struct WorkoutLoggingView: View {
             
             // Machine Settings
             VStack(alignment: .leading, spacing: 10) {
-                Text("Machine Settings").font(.headline).foregroundColor(themeManager.secondaryText)
+                Text("Machine Settings").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                 TextField("e.g. Seat Position 4", text: $machineSettings)
                     .padding()
                     .background(themeManager.cardBackground)
@@ -705,7 +702,7 @@ struct WorkoutLoggingView: View {
             
             // Per-Set Notes
             VStack(alignment: .leading, spacing: 10) {
-                Text("Set \(currentSetNumber) Notes").font(.headline).foregroundColor(themeManager.secondaryText)
+                Text("Set \(currentSetNumber) Notes").appHeadingStyle().foregroundColor(themeManager.secondaryText)
                 TextField("Notes for this set...", text: $currentNotes)
                     .padding()
                     .background(themeManager.cardBackground)
@@ -724,7 +721,7 @@ struct WorkoutLoggingView: View {
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Warm-up (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Warm-up (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $warmUpTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -733,7 +730,7 @@ struct WorkoutLoggingView: View {
                         .foregroundColor(themeManager.primaryText)
                 }
                 VStack(alignment: .leading) {
-                    Text("Run (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Run (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $runningTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -745,7 +742,7 @@ struct WorkoutLoggingView: View {
             
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Cool-down (min)").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Cool-down (min)").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("0", value: $coolDownTime, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -754,7 +751,7 @@ struct WorkoutLoggingView: View {
                         .foregroundColor(themeManager.primaryText)
                 }
                 VStack(alignment: .leading) {
-                    Text("Speed").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Speed").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                     TextField("e.g. 6.5", value: $runningSpeed, format: .number)
                         .keyboardType(.decimalPad)
                         .padding()
@@ -766,16 +763,16 @@ struct WorkoutLoggingView: View {
             
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text("How did it feel?").font(.headline).foregroundColor(themeManager.primaryText)
+                    Text("How did it feel?").appHeadingStyle().foregroundColor(themeManager.primaryText)
                     Spacer()
                     Text("\(Int(intensityRating))/10").fontWeight(.bold).foregroundColor(Color.appAccent)
                 }
                 Slider(value: $intensityRating, in: 1...10, step: 1) {
                     Text("Intensity")
                 } minimumValueLabel: {
-                    Text("Easy").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Easy").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                 } maximumValueLabel: {
-                    Text("Hard").font(.caption).foregroundColor(themeManager.secondaryText)
+                    Text("Hard").appCaptionStyle().foregroundColor(themeManager.secondaryText)
                 }
                 .tint(.appAccent)
             }
@@ -913,7 +910,7 @@ struct PlateCalculatorView: View {
                     .foregroundColor(Color.appAccent)
                     .contentTransition(.numericText())
                 Text("lbs")
-                    .font(.headline)
+                    .appHeadingStyle()
                     .foregroundColor(themeManager.secondaryText)
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: weight)
@@ -955,7 +952,7 @@ struct PlateCalculatorView: View {
             VStack(spacing: 15) {
                 HStack {
                     Text("Bar:")
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                     Picker("Bar Weight", selection: $barWeight) {
                         Text("45 lb").tag(45.0)
@@ -974,7 +971,7 @@ struct PlateCalculatorView: View {
                             updateWeight()
                         }
                     }
-                    .font(.caption)
+                    .appCaptionStyle()
                     .foregroundColor(.red)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -996,7 +993,7 @@ struct PlateCalculatorView: View {
                             }) {
                                 VStack {
                                     Text("+\(String(format: "%g", plateVal))")
-                                        .font(.headline)
+                                        .appHeadingStyle()
                                         .fontWeight(.bold)
                                         .foregroundColor(.white)
                                 }
@@ -1013,8 +1010,7 @@ struct PlateCalculatorView: View {
             }
         }
         .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .onAppear {
             if let currentW = weight, currentW >= barWeight {
                 calculatePlatesFor(target: currentW)

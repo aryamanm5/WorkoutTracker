@@ -37,7 +37,7 @@ struct BodyWeightView: View {
                         if let latest = entries.first {
                             VStack(spacing: 10) {
                                 Text("Current Weight")
-                                    .font(.subheadline)
+                                    .appBodyStyle()
                                     .foregroundColor(themeManager.secondaryText)
                                 Text("\(latest.weight, specifier: "%.1f")")
                                     .font(.system(size: 48, weight: .bold, design: .rounded))
@@ -52,14 +52,13 @@ struct BodyWeightView: View {
                                         Image(systemName: diff >= 0 ? "arrow.up" : "arrow.down")
                                         Text("\(abs(diff), specifier: "%.1f") lbs")
                                     }
-                                    .font(.subheadline)
+                                    .appBodyStyle()
                                     .foregroundColor(diff >= 0 ? .red : .green)
                                 }
                             }
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 30)
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(16)
+                            .appCard()
                             .padding(.horizontal)
                         }
                         
@@ -67,7 +66,7 @@ struct BodyWeightView: View {
                         if entries.count > 1 {
                             VStack(alignment: .leading, spacing: 15) {
                                 Text("Weight Trend")
-                                    .font(.headline)
+                                    .appHeadingStyle()
                                     .foregroundColor(themeManager.primaryText)
                                 
                                 Chart {
@@ -97,15 +96,14 @@ struct BodyWeightView: View {
                                 .frame(height: 200)
                             }
                             .padding()
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(16)
+                            .appCard()
                             .padding(.horizontal)
                         }
                         
                         // History
                         VStack(alignment: .leading, spacing: 15) {
                             Text("Weight History")
-                                .font(.headline)
+                                .appHeadingStyle()
                                 .foregroundColor(themeManager.primaryText)
                             
                             if entries.isEmpty {
@@ -114,7 +112,7 @@ struct BodyWeightView: View {
                                     .padding()
                             } else {
                                 Text("Swipe left to delete")
-                                    .font(.caption)
+                                    .appCaptionStyle()
                                     .foregroundColor(themeManager.secondaryText)
                                 
                                 List {
@@ -134,8 +132,7 @@ struct BodyWeightView: View {
                             }
                         }
                         .padding()
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(16)
+                        .appCard()
                         .padding(.horizontal)
                     }
                     .padding(.vertical)
@@ -164,14 +161,14 @@ struct BodyWeightView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Creatine Tracking")
-                        .font(.headline)
+                        .appHeadingStyle()
                         .foregroundColor(themeManager.primaryText)
                     
                     HStack {
                         Image(systemName: "flame.fill")
                             .foregroundColor(.orange)
                         Text("\(creatineStreak) day streak")
-                            .font(.subheadline)
+                            .appBodyStyle()
                             .foregroundColor(.orange)
                     }
                 }
@@ -188,7 +185,7 @@ struct BodyWeightView: View {
                             .font(.system(size: 44))
                             .foregroundColor(tookCreatineToday ? .green : themeManager.secondaryText)
                         Text(tookCreatineToday ? "Done!" : "Take")
-                            .font(.caption)
+                            .appCaptionStyle()
                             .foregroundColor(tookCreatineToday ? .green : themeManager.secondaryText)
                     }
                 }
@@ -214,8 +211,7 @@ struct BodyWeightView: View {
             }
         }
         .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
         .padding(.top, 10)
     }
@@ -228,7 +224,7 @@ struct BodyWeightView: View {
                 VStack(spacing: 20) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Weight (lbs)")
-                            .font(.headline)
+                            .appHeadingStyle()
                             .foregroundColor(themeManager.secondaryText)
                         TextField("Enter weight", value: $newWeight, format: .number)
                             .keyboardType(.decimalPad)
@@ -241,7 +237,7 @@ struct BodyWeightView: View {
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Notes (optional)")
-                            .font(.headline)
+                            .appHeadingStyle()
                             .foregroundColor(themeManager.secondaryText)
                         TextField("e.g. Morning weight", text: $newNotes)
                             .padding()
@@ -365,11 +361,11 @@ struct WeightEntryRow: View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
                 Text(entry.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.subheadline)
+                    .appBodyStyle()
                     .foregroundColor(themeManager.secondaryText)
                 if !entry.notes.isEmpty {
                     Text(entry.notes)
-                        .font(.caption)
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                 }
             }
