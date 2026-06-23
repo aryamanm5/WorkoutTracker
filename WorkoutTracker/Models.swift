@@ -12,15 +12,17 @@ enum WorkoutType: String, Codable, CaseIterable {
 class WorkoutDay {
     var date: Date
     var typeRawValue: String
+    var tookCreatine: Bool
     
     var type: WorkoutType {
         get { WorkoutType(rawValue: typeRawValue) ?? .rest }
         set { typeRawValue = newValue.rawValue }
     }
     
-    init(date: Date, type: WorkoutType) {
+    init(date: Date, type: WorkoutType, tookCreatine: Bool = false) {
         self.date = Calendar.current.startOfDay(for: date)
         self.typeRawValue = type.rawValue
+        self.tookCreatine = tookCreatine
     }
 }
 
@@ -29,6 +31,8 @@ class Exercise {
     var name: String
     var typeRawValue: String
     var isCardio: Bool
+    var suggestedNextWeight: Double?
+    var shouldIncreaseWeight: Bool
     
     @Relationship(deleteRule: .cascade, inverse: \ExerciseSession.exercise)
     var sessions: [ExerciseSession] = []
@@ -42,6 +46,8 @@ class Exercise {
         self.name = name
         self.typeRawValue = type.rawValue
         self.isCardio = isCardio
+        self.suggestedNextWeight = nil
+        self.shouldIncreaseWeight = false
     }
 }
 
@@ -83,11 +89,30 @@ class LoggedSet {
     var setNumber: Int
     var reps: Int
     var weight: Double
+    var notes: String
+    var difficulty: Int // 1-5 rating
+    var restTimeSeconds: Int?
     var session: ExerciseSession?
     
-    init(setNumber: Int, reps: Int, weight: Double) {
+    init(setNumber: Int, reps: Int, weight: Double, notes: String = "", difficulty: Int = 3, restTimeSeconds: Int? = nil) {
         self.setNumber = setNumber
         self.reps = reps
         self.weight = weight
+        self.notes = notes
+        self.difficulty = difficulty
+        self.restTimeSeconds = restTimeSeconds
+    }
+}
+
+@Model
+class BodyWeightEntry {
+    var date: Date
+    var weight: Double
+    var notes: String
+    
+    init(date: Date, weight: Double, notes: String = "") {
+        self.date = date
+        self.weight = weight
+        self.notes = notes
     }
 }

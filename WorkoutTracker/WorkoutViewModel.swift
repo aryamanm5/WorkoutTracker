@@ -5,7 +5,6 @@ import SwiftUI
 @Observable
 class WorkoutViewModel {
     
-    // Automatic Workout Schedule
     func getTodayWorkoutType() -> WorkoutType {
         let weekday = Calendar.current.component(.weekday, from: Date())
         switch weekday {
@@ -25,7 +24,6 @@ class WorkoutViewModel {
         return exercise.sessions.sorted { $0.date > $1.date }.first
     }
     
-    // Automatically marks skipped days as Rest Days
     func processMissingDays(context: ModelContext) {
         let descriptor = FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)])
         let today = Calendar.current.startOfDay(for: Date())
@@ -33,9 +31,9 @@ class WorkoutViewModel {
         do {
             let pastDays = try context.fetch(descriptor)
             guard let lastLoggedDay = pastDays.first?.date else {
-                // First time opening app, log today
                 let newDay = WorkoutDay(date: today, type: getTodayWorkoutType())
                 context.insert(newDay)
+                try context.save()
                 return
             }
             

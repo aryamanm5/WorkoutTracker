@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @EnvironmentObject var themeManager: ThemeManager
+    
     var body: some View {
         TabView {
             CurrentWorkoutView()
@@ -12,11 +14,18 @@ struct ContentView: View {
                 .tabItem {
                     Label("Tracking", systemImage: "chart.bar.fill")
                 }
+            
+            BodyWeightView()
+                .tabItem {
+                    Label("Body", systemImage: "scalemass.fill")
+                }
                 
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape.fill")
                 }
         }
+        .tint(Color.appAccent)
+        .preferredColorScheme(themeManager.colorScheme)
     }
 }

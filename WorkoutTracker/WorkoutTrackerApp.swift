@@ -6,10 +6,11 @@ struct WorkoutTrackerApp: App {
     let container: ModelContainer
     @State private var router = AppRouter()
     @State private var viewModel = WorkoutViewModel()
+    @StateObject private var themeManager = ThemeManager()
 
     init() {
         do {
-            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self)
+            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self)
             seedInitialData(context: container.mainContext)
         } catch {
             fatalError("Failed to initialize SwiftData container.")
@@ -21,6 +22,7 @@ struct WorkoutTrackerApp: App {
             ContentView()
                 .environment(router)
                 .environment(viewModel)
+                .environmentObject(themeManager)
                 .modelContainer(container)
                 .onAppear {
                     viewModel.processMissingDays(context: container.mainContext)
