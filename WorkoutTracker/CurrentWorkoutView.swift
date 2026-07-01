@@ -361,6 +361,11 @@ struct TempSet: Identifiable {
     let restTimeSeconds: Int?
 }
 
+private enum WeightConfirmationAction {
+    case saveSet
+    case finish
+}
+
 // MARK: - Rest Timer View
 struct RestTimerView: View {
     @Binding var seconds: Int
@@ -401,6 +406,7 @@ struct WorkoutLoggingView: View {
     @State private var reps: Int = 0
     @State private var weight: Double? = nil
     @State private var machineSettings: String = ""
+    @State private var selectedLocation: WorkoutLocation = .planetFitness
     @State private var recordedSets: [TempSet] = []
     @State private var currentNotes: String = ""
     @State private var currentDifficulty: Int = 3
@@ -426,6 +432,8 @@ struct WorkoutLoggingView: View {
     @State private var intensityRating: Double = 5.0
     
     @State private var sessionNotes: String = ""
+    @State private var weightConfirmationAction: WeightConfirmationAction?
+    @State private var showingUnusualWeightAlert = false
     
     var canSaveSet: Bool {
         reps > 0
@@ -443,6 +451,8 @@ struct WorkoutLoggingView: View {
                     } else {
                         strengthInterface
                     }
+
+                    workoutLocationPicker
                     
                     // Weight Increase Section
                     if !exercise.isCardio {
@@ -573,7 +583,44 @@ struct WorkoutLoggingView: View {
         .onDisappear {
             timerTask?.cancel()
         }
+        .alert("Check weight", isPresented: $showingUnusualWeightAlert) {
+            Button("Edit", role: .cancel) {
+                weightConfirmationAction = nil
+            }
+            Button("Save Anyway") {
+                let action = weightConfirmationAction
+                weightConfirmationAction = nil
+                switch action {
+                case .saveSet:
+                    saveNextSetConfirmed()
+                case .finish:
+                    saveAndFinishConfirmed()
+                case .none:
+                    break
+                }
+            }
+        } message: {
+            Text("This weight is much higher than your previous entries for this exercise. Is it correct?")
+        }
         .preferredColorScheme(themeManager.colorScheme)
+    }
+
+    var workoutLocationPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Workout Location")
+                .font(.headline)
+                .foregroundColor(themeManager.secondaryText)
+
+            Picker("Workout Location", selection: $selectedLocation) {
+                ForEach(WorkoutLocation.allCases) { location in
+                    Text(location.rawValue).tag(location)
+                }
+            }
+            .pickerStyle(.segmented)
+        }
+        .padding()
+        .background(themeManager.cardBackground)
+        .cornerRadius(12)
     }
     
     private func setupFromPreviousSession() {
@@ -814,7 +861,17 @@ struct WorkoutLoggingView: View {
     
     private func saveNextSet() {
         guard canSaveSet else { return }
-        
+
+        if shouldConfirmWeight(weight) {
+            weightConfirmationAction = .saveSet
+            showingUnusualWeightAlert = true
+            return
+        }
+
+        saveNextSetConfirmed()
+    }
+
+    private func saveNextSetConfirmed() {
         let safeWeight = weight ?? 0.0
         let newSet = TempSet(
             setNumber: currentSetNumber,
@@ -835,11 +892,22 @@ struct WorkoutLoggingView: View {
     }
     
     private func saveAndFinish() {
+        if !exercise.isCardio && canSaveSet && shouldConfirmWeight(weight) {
+            weightConfirmationAction = .finish
+            showingUnusualWeightAlert = true
+            return
+        }
+
+        saveAndFinishConfirmed()
+    }
+
+    private func saveAndFinishConfirmed() {
         let session = ExerciseSession(
             date: Date(),
             machineSettings: machineSettings,
             totalSets: exercise.isCardio ? 1 : (canSaveSet ? recordedSets.count + 1 : recordedSets.count),
             notes: sessionNotes,
+            location: selectedLocation,
             warmUpTime: warmUpTime,
             runningTime: runningTime,
             coolDownTime: coolDownTime,
@@ -890,6 +958,20 @@ struct WorkoutLoggingView: View {
         } catch {
             print("Error saving session: \(error)")
         }
+    }
+
+    private func shouldConfirmWeight(_ candidate: Double?) -> Bool {
+        guard let candidate, candidate > 0 else { return false }
+        let previousMax = exercise.sessions
+            .flatMap { $0.sets }
+            .map(\.weight)
+            .max()
+
+        guard let previousMax, previousMax > 0 else {
+            return candidate >= 500
+        }
+
+        return candidate >= max(previousMax * 1.5, previousMax + 100)
     }
 }
 

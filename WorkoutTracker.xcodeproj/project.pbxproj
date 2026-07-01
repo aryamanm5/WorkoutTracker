@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7FE97E222FEF19C30011663F /* MuscleDiagramView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE97E212FEF19C20011663F /* MuscleDiagramView.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		7FF9DE572FE34D8D0068E45C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +28,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		7FE97E212FEF19C20011663F /* MuscleDiagramView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MuscleDiagramView.swift; sourceTree = "<group>"; };
 		7FF9DE492FE34D8A0068E45C /* WorkoutTracker.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WorkoutTracker.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7FF9DE562FE34D8D0068E45C /* WorkoutTrackerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WorkoutTrackerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		7FF9DE602FE34D8D0068E45C /* WorkoutTrackerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = WorkoutTrackerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -79,6 +84,7 @@
 				7FF9DE592FE34D8D0068E45C /* WorkoutTrackerTests */,
 				7FF9DE632FE34D8D0068E45C /* WorkoutTrackerUITests */,
 				7FF9DE4A2FE34D8A0068E45C /* Products */,
+				7FE97E212FEF19C20011663F /* MuscleDiagramView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -236,6 +242,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7FE97E222FEF19C30011663F /* MuscleDiagramView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

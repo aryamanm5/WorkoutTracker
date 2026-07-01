@@ -1,19 +1,26 @@
 import SwiftUI
 import SwiftData
 import Charts
+import PhotosUI
 
 struct BodyWeightView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
     @Query(sort: \BodyWeightEntry.date, order: .reverse) var entries: [BodyWeightEntry]
     @Query var workoutDays: [WorkoutDay]
+    @Query(sort: \ProgressPhoto.date, order: .reverse) var progressPhotos: [ProgressPhoto]
     
     @State private var showingAddEntry = false
     @State private var newWeight: Double? = nil
     @State private var newNotes: String = ""
+    @State private var showingUnusualWeightAlert = false
+    @State private var pendingWeightSave = false
+    @State private var selectedProgressPhotoItem: PhotosPickerItem?
+    @State private var progressPhotoNotes = ""
     
     // Creatine tracking for today
     @State private var tookCreatineToday = false
+    @State private var creatineLogDate = Date()
     
     var sortedEntriesForChart: [BodyWeightEntry] {
         entries.sorted { $0.date < $1.date }
@@ -32,6 +39,8 @@ struct BodyWeightView: View {
                     VStack(spacing: 20) {
                         // Creatine Tracking Card
                         creatineCard
+
+                        progressPhotosSection
                         
                         // Current Weight Card
                         if let latest = entries.first {
@@ -154,6 +163,17 @@ struct BodyWeightView: View {
             .sheet(isPresented: $showingAddEntry) {
                 addEntrySheet
             }
+            .alert("Check weight", isPresented: $showingUnusualWeightAlert) {
+                Button("Edit", role: .cancel) {
+                    pendingWeightSave = false
+                }
+                Button("Save Anyway") {
+                    pendingWeightSave = false
+                    saveEntryConfirmed()
+                }
+            } message: {
+                Text("This weight is much higher than your most recent entry. Is it correct?")
+            }
             .onAppear(perform: loadCreatineStatus)
             .preferredColorScheme(themeManager.colorScheme)
         }
@@ -180,7 +200,7 @@ struct BodyWeightView: View {
                 
                 Button(action: {
                     tookCreatineToday.toggle()
-                    updateCreatineStatus(took: tookCreatineToday)
+                    updateCreatineStatus(on: Date(), took: tookCreatineToday)
                     triggerHaptic()
                 }) {
                     VStack(spacing: 4) {
@@ -212,12 +232,83 @@ struct BodyWeightView: View {
                     }
                 }
             }
+
+            Divider()
+                .background(themeManager.secondaryText.opacity(0.3))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Log Historical Creatine")
+                    .font(.subheadline)
+                    .foregroundColor(themeManager.secondaryText)
+
+                DatePicker("Date", selection: $creatineLogDate, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .tint(Color.appAccent)
+
+                Button(action: toggleHistoricalCreatine) {
+                    Label(hasCreatine(on: creatineLogDate) ? "Mark as Not Taken" : "Mark as Taken", systemImage: hasCreatine(on: creatineLogDate) ? "xmark.circle" : "checkmark.circle.fill")
+                        .foregroundColor(hasCreatine(on: creatineLogDate) ? .red : Color.appAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(themeManager.secondaryBackground)
+                        .cornerRadius(10)
+                }
+            }
         }
         .padding()
         .background(themeManager.cardBackground)
         .cornerRadius(16)
         .padding(.horizontal)
         .padding(.top, 10)
+    }
+
+    var progressPhotosSection: some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack {
+                Text("Progress Photos")
+                    .font(.headline)
+                    .foregroundColor(themeManager.primaryText)
+
+                Spacer()
+
+                PhotosPicker(selection: $selectedProgressPhotoItem, matching: .images) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(Color.appAccent)
+                }
+            }
+
+            TextField("Photo notes (optional)", text: $progressPhotoNotes)
+                .padding()
+                .background(themeManager.secondaryBackground)
+                .cornerRadius(10)
+                .foregroundColor(themeManager.primaryText)
+
+            if progressPhotos.isEmpty {
+                Text("No progress photos yet")
+                    .foregroundColor(themeManager.secondaryText)
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(progressPhotos) { photo in
+                            ProgressPhotoCard(photo: photo, themeManager: themeManager) {
+                                deleteProgressPhoto(photo)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(themeManager.cardBackground)
+        .cornerRadius(16)
+        .padding(.horizontal)
+        .onChange(of: selectedProgressPhotoItem) {
+            Task {
+                await saveSelectedProgressPhoto()
+            }
+        }
     }
     
     var addEntrySheet: some View {
@@ -279,17 +370,24 @@ struct BodyWeightView: View {
         tookCreatineToday = workoutDays.first { Calendar.current.isDate($0.date, inSameDayAs: today) }?.tookCreatine ?? false
     }
     
-    private func updateCreatineStatus(took: Bool) {
-        let today = Calendar.current.startOfDay(for: Date())
+    private func updateCreatineStatus(on date: Date, took: Bool) {
+        let day = Calendar.current.startOfDay(for: date)
         
-        if let existingDay = workoutDays.first(where: { Calendar.current.isDate($0.date, inSameDayAs: today) }) {
+        if let existingDay = workoutDays.first(where: { Calendar.current.isDate($0.date, inSameDayAs: day) }) {
             existingDay.tookCreatine = took
         } else {
-            let newDay = WorkoutDay(date: today, type: .rest, tookCreatine: took)
+            let newDay = WorkoutDay(date: day, type: .rest, tookCreatine: took)
             context.insert(newDay)
         }
         
         try? context.save()
+    }
+
+    private func toggleHistoricalCreatine() {
+        let currentlyTaken = hasCreatine(on: creatineLogDate)
+        updateCreatineStatus(on: creatineLogDate, took: !currentlyTaken)
+        loadCreatineStatus()
+        triggerHaptic()
     }
     
     private func hasCreatine(on date: Date) -> Bool {
@@ -342,6 +440,17 @@ struct BodyWeightView: View {
     
     func saveEntry() {
         guard let weight = newWeight else { return }
+        if shouldConfirmWeight(weight), !pendingWeightSave {
+            pendingWeightSave = true
+            showingUnusualWeightAlert = true
+            return
+        }
+
+        saveEntryConfirmed()
+    }
+
+    func saveEntryConfirmed() {
+        guard let weight = newWeight else { return }
         let entry = BodyWeightEntry(date: Date(), weight: weight, notes: newNotes)
         context.insert(entry)
         try? context.save()
@@ -350,10 +459,73 @@ struct BodyWeightView: View {
         newNotes = ""
         showingAddEntry = false
     }
+
+    private func shouldConfirmWeight(_ weight: Double) -> Bool {
+        guard let latestWeight = entries.first?.weight, latestWeight > 0 else {
+            return weight >= 500
+        }
+
+        return weight >= max(latestWeight * 1.2, latestWeight + 25)
+    }
     
     func deleteWeightEntry(_ entry: BodyWeightEntry) {
         context.delete(entry)
         try? context.save()
+    }
+
+    @MainActor
+    private func saveSelectedProgressPhoto() async {
+        guard let selectedProgressPhotoItem,
+              let data = try? await selectedProgressPhotoItem.loadTransferable(type: Data.self) else {
+            return
+        }
+
+        let photo = ProgressPhoto(date: Date(), imageData: data, notes: progressPhotoNotes)
+        context.insert(photo)
+        try? context.save()
+        self.selectedProgressPhotoItem = nil
+        progressPhotoNotes = ""
+    }
+
+    private func deleteProgressPhoto(_ photo: ProgressPhoto) {
+        context.delete(photo)
+        try? context.save()
+    }
+}
+
+struct ProgressPhotoCard: View {
+    let photo: ProgressPhoto
+    let themeManager: ThemeManager
+    let onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let image = UIImage(data: photo.imageData) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 140, height: 180)
+                    .clipped()
+                    .cornerRadius(10)
+            }
+
+            Text(photo.date.formatted(date: .abbreviated, time: .omitted))
+                .font(.caption)
+                .foregroundColor(themeManager.secondaryText)
+
+            if !photo.notes.isEmpty {
+                Text(photo.notes)
+                    .font(.caption2)
+                    .foregroundColor(themeManager.secondaryText)
+                    .lineLimit(2)
+            }
+
+            Button(role: .destructive, action: onDelete) {
+                Label("Delete", systemImage: "trash")
+                    .font(.caption)
+            }
+        }
+        .frame(width: 140, alignment: .leading)
     }
 }
 

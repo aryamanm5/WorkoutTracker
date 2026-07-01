@@ -10,7 +10,7 @@ struct WorkoutTrackerApp: App {
 
     init() {
         do {
-            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self)
+            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self, ProgressPhoto.self)
             seedInitialData(context: container.mainContext)
         } catch {
             fatalError("Failed to initialize SwiftData container.")

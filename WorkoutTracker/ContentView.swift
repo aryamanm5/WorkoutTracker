@@ -26,6 +26,7 @@ struct ContentView: View {
                 }
         }
         .tint(Color.appAccent)
+        .font(themeManager.selectedFont.font)
         .preferredColorScheme(themeManager.colorScheme)
     }
 }

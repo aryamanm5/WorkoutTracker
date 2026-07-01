@@ -8,6 +8,13 @@ enum WorkoutType: String, Codable, CaseIterable {
     case rest = "Rest"
 }
 
+enum WorkoutLocation: String, Codable, CaseIterable, Identifiable {
+    case home = "Home"
+    case planetFitness = "Planet Fitness"
+
+    var id: String { rawValue }
+}
+
 @Model
 class WorkoutDay {
     var date: Date
@@ -33,6 +40,7 @@ class Exercise {
     var isCardio: Bool
     var suggestedNextWeight: Double?
     var shouldIncreaseWeight: Bool
+    var targetMuscleRawValues: [String] = []
     
     @Relationship(deleteRule: .cascade, inverse: \ExerciseSession.exercise)
     var sessions: [ExerciseSession] = []
@@ -41,6 +49,20 @@ class Exercise {
         get { WorkoutType(rawValue: typeRawValue) ?? .rest }
         set { typeRawValue = newValue.rawValue }
     }
+
+    var targetMuscles: Set<TargetMuscle> {
+        get {
+            let savedTargets = Set(targetMuscleRawValues.compactMap(TargetMuscle.init(rawValue:)))
+            if savedTargets.isEmpty {
+                return MuscleCatalog.defaultTargets(for: name, type: type, isCardio: isCardio)
+            }
+
+            return savedTargets
+        }
+        set {
+            targetMuscleRawValues = newValue.map(\.rawValue).sorted()
+        }
+    }
     
     init(name: String, type: WorkoutType, isCardio: Bool = false) {
         self.name = name
@@ -48,6 +70,7 @@ class Exercise {
         self.isCardio = isCardio
         self.suggestedNextWeight = nil
         self.shouldIncreaseWeight = false
+        self.targetMuscleRawValues = MuscleCatalog.defaultTargets(for: name, type: type, isCardio: isCardio).map(\.rawValue).sorted()
     }
 }
 
@@ -57,6 +80,7 @@ class ExerciseSession {
     var machineSettings: String
     var totalSets: Int
     var notes: String
+    var locationRawValue: String = WorkoutLocation.planetFitness.rawValue
     
     // Cardio Specific Metrics
     var warmUpTime: Double?
@@ -66,15 +90,21 @@ class ExerciseSession {
     var intensityRating: Int?
     
     var exercise: Exercise?
+
+    var location: WorkoutLocation {
+        get { WorkoutLocation(rawValue: locationRawValue) ?? .planetFitness }
+        set { locationRawValue = newValue.rawValue }
+    }
     
     @Relationship(deleteRule: .cascade, inverse: \LoggedSet.session)
     var sets: [LoggedSet] = []
     
-    init(date: Date, machineSettings: String, totalSets: Int, notes: String = "", warmUpTime: Double? = nil, runningTime: Double? = nil, coolDownTime: Double? = nil, runningSpeed: Double? = nil, intensityRating: Int? = nil) {
+    init(date: Date, machineSettings: String, totalSets: Int, notes: String = "", location: WorkoutLocation = .planetFitness, warmUpTime: Double? = nil, runningTime: Double? = nil, coolDownTime: Double? = nil, runningSpeed: Double? = nil, intensityRating: Int? = nil) {
         self.date = date
         self.machineSettings = machineSettings
         self.totalSets = totalSets
         self.notes = notes
+        self.locationRawValue = location.rawValue
         
         self.warmUpTime = warmUpTime
         self.runningTime = runningTime
@@ -113,6 +143,19 @@ class BodyWeightEntry {
     init(date: Date, weight: Double, notes: String = "") {
         self.date = date
         self.weight = weight
+        self.notes = notes
+    }
+}
+
+@Model
+class ProgressPhoto {
+    var date: Date
+    var imageData: Data
+    var notes: String
+
+    init(date: Date, imageData: Data, notes: String = "") {
+        self.date = date
+        self.imageData = imageData
         self.notes = notes
     }
 }

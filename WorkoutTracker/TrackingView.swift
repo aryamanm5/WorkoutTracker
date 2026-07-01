@@ -2,6 +2,14 @@ import SwiftUI
 import SwiftData
 import Charts
 
+enum ProgressFilter: String, CaseIterable, Identifiable {
+    case all = "All"
+    case strength = "Strength"
+    case cardio = "Cardio"
+
+    var id: String { rawValue }
+}
+
 struct TrackingView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
@@ -11,9 +19,23 @@ struct TrackingView: View {
     
     @State private var selectedDate: Date = Date()
     @State private var currentMonth: Date = Date()
+    @State private var progressFilter: ProgressFilter = .all
     
     var activeExercises: [Exercise] {
-        allExercises.filter { !$0.sessions.isEmpty && !$0.isCardio }
+        allExercises.filter { !$0.sessions.isEmpty }
+    }
+
+    var filteredProgressExercises: [Exercise] {
+        activeExercises.filter { exercise in
+            switch progressFilter {
+            case .all:
+                return true
+            case .strength:
+                return !exercise.isCardio
+            case .cardio:
+                return exercise.isCardio
+            }
+        }
     }
     
     var currentStreak: Int {
@@ -25,6 +47,18 @@ struct TrackingView: View {
             Calendar.current.startOfDay(for: session.date)
         }
         return grouped.count
+    }
+
+    var todaysSessions: [ExerciseSession] {
+        sessionsForDate(Date())
+    }
+
+    var activatedMusclesToday: Set<TargetMuscle> {
+        musclesWorked(in: todaysSessions)
+    }
+
+    var restingMusclesToday: Set<TargetMuscle> {
+        Set(TargetMuscle.allCases).subtracting(activatedMusclesToday)
     }
     
     var body: some View {
@@ -38,8 +72,8 @@ struct TrackingView: View {
                     ScrollView {
                         VStack(spacing: 25) {
                             streakCard
+                            todaysMuscleSection
                             calendarSection
-                            selectedDaySection
                             progressChartSection
                             exerciseListSection
                         }
@@ -48,6 +82,10 @@ struct TrackingView: View {
                 }
             }
             .navigationTitle("Tracking")
+            .navigationDestination(for: Date.self) { date in
+                WorkoutSummaryView(date: date)
+                    .environmentObject(themeManager)
+            }
             .preferredColorScheme(themeManager.colorScheme)
         }
     }
@@ -91,10 +129,41 @@ struct TrackingView: View {
             }
         }
         .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
         .padding(.top, 10)
+    }
+
+    var todaysMuscleSection: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Today's Muscle Focus")
+                        .appHeadingStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text(todaysSessions.isEmpty ? "No workout logged today" : "\(todaysSessions.count) sessions logged today")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
+
+                Spacer()
+
+                Image(systemName: "figure.strengthtraining.traditional")
+                    .foregroundColor(.red)
+                    .font(.title2)
+            }
+
+            MuscleDiagramView(
+                activatedMuscles: activatedMusclesToday,
+                restingMuscles: restingMusclesToday,
+                selectedMuscles: nil,
+                isEditable: false
+            )
+            .environmentObject(themeManager)
+        }
+        .padding()
+        .appCard()
+        .padding(.horizontal)
     }
     
     var calendarSection: some View {
@@ -136,18 +205,18 @@ struct TrackingView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
                 ForEach(daysInMonth(), id: \.self) { date in
                     if let date = date {
-                        CalendarDayView(
-                            date: date,
-                            isSelected: Calendar.current.isDate(date, inSameDayAs: selectedDate),
-                            hasWorkout: hasWorkout(on: date),
-                            hasCardio: hasCardio(on: date),
-                            hasCreatine: hasCreatine(on: date),
-                            isStreakDay: isPartOfStreak(date),
-                            themeManager: themeManager
-                        )
-                        .onTapGesture {
-                            selectedDate = date
+                        NavigationLink(value: date) {
+                            CalendarDayView(
+                                date: date,
+                                isSelected: Calendar.current.isDate(date, inSameDayAs: selectedDate),
+                                hasWorkout: hasWorkout(on: date),
+                                hasCardio: hasCardio(on: date),
+                                hasCreatine: hasCreatine(on: date),
+                                isStreakDay: isPartOfStreak(date),
+                                themeManager: themeManager
+                            )
                         }
+                        .simultaneousGesture(TapGesture().onEnded { selectedDate = date })
                     } else {
                         Text("")
                             .frame(height: 45)
@@ -157,110 +226,102 @@ struct TrackingView: View {
             .padding(.horizontal)
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
-        .padding(.horizontal)
-    }
-    
-    var selectedDaySection: some View {
-        let sessions = sessionsForDate(selectedDate)
-        
-        return VStack(alignment: .leading, spacing: 15) {
-            HStack {
-                Text(selectedDate.formatted(.dateTime.weekday(.wide).month().day()))
-                    .font(.headline)
-                    .foregroundColor(themeManager.primaryText)
-                
-                Spacer()
-                
-                if !sessions.isEmpty {
-                    Text("Swipe to delete")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                }
-            }
-            .padding(.horizontal)
-            
-            if sessions.isEmpty {
-                Text("No workouts on this day")
-                    .foregroundColor(themeManager.secondaryText)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-            } else {
-                List {
-                    ForEach(sessions) { session in
-                        NavigationLink {
-                            SessionDetailView(session: session)
-                                .environmentObject(themeManager)
-                        } label: {
-                            SessionRowView(
-                                session: session,
-                                themeManager: themeManager
-                            )
-                        }
-                        .swipeActions(edge: .trailing) {
-                            Button(role: .destructive) {
-                                deleteSession(session)
-                            } label: {
-                                Label("Delete", systemImage: "trash")
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .frame(height: CGFloat(max(sessions.count, 1)) * 90)
-            }
-        }
-        .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
     var progressChartSection: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Progress Overview")
-                .font(.headline)
-                .foregroundColor(themeManager.primaryText)
-                .padding(.horizontal)
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Progress Overview")
+                        .appHeadingStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text("Relative change from each exercise's first logged session")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal)
+
+            Picker("Progress Filter", selection: $progressFilter) {
+                ForEach(ProgressFilter.allCases) { filter in
+                    Text(filter.rawValue).tag(filter)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal)
             
-            if activeExercises.isEmpty {
-                Text("Complete some strength workouts to see progress")
+            if filteredProgressExercises.isEmpty {
+                Text("Complete some workouts to see progress")
                     .foregroundColor(themeManager.secondaryText)
                     .padding()
             } else {
                 Chart {
-                    ForEach(activeExercises) { exercise in
+                    RuleMark(y: .value("Baseline", 0))
+                        .foregroundStyle(themeManager.secondaryText.opacity(0.35))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+
+                    ForEach(filteredProgressExercises) { exercise in
                         ForEach(normalizedProgressData(for: exercise)) { point in
                             LineMark(
                                 x: .value("Date", point.date),
                                 y: .value("Progress", point.normalizedValue)
                             )
                             .foregroundStyle(by: .value("Exercise", exercise.name))
+                            .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+
+                            PointMark(
+                                x: .value("Date", point.date),
+                                y: .value("Progress", point.normalizedValue)
+                            )
+                            .foregroundStyle(by: .value("Exercise", exercise.name))
+                            .symbolSize(36)
                         }
                     }
                 }
-                .chartYAxisLabel("Relative Improvement %")
+                .chartLegend(position: .bottom, alignment: .leading)
+                .chartYAxisLabel("Change")
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine()
+                            .foregroundStyle(themeManager.secondaryText.opacity(0.2))
+                        AxisValueLabel {
+                            if let percentage = value.as(Double.self) {
+                                Text("\(Int(percentage))%")
+                                    .foregroundColor(themeManager.secondaryText)
+                            }
+                        }
+                    }
+                }
                 .chartXAxis {
                     AxisMarks(values: .automatic) { _ in
                         AxisGridLine()
+                            .foregroundStyle(themeManager.secondaryText.opacity(0.18))
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                            .foregroundStyle(themeManager.secondaryText)
                     }
                 }
-                .frame(height: 250)
+                .chartPlotStyle { plotArea in
+                    plotArea
+                        .background(themeManager.secondaryBackground.opacity(0.4))
+                        .cornerRadius(10)
+                }
+                .frame(height: 300)
                 .padding()
             }
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
     var exerciseListSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Exercise Progress")
-                .font(.headline)
+                .appHeadingStyle()
                 .foregroundColor(themeManager.primaryText)
                 .padding(.horizontal)
             
@@ -271,6 +332,11 @@ struct TrackingView: View {
                             Text(exercise.name)
                                 .font(.headline)
                                 .foregroundColor(themeManager.primaryText)
+                            if exercise.isCardio {
+                                Label("Cardio", systemImage: "figure.run")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                            }
                             Text("\(exercise.sessions.count) Sessions Logged")
                                 .font(.subheadline)
                                 .foregroundColor(themeManager.secondaryText)
@@ -282,13 +348,16 @@ struct TrackingView: View {
                     .padding()
                     .background(themeManager.secondaryBackground)
                     .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(themeManager.cardBorder.opacity(0.8), lineWidth: 1)
+                    )
                 }
                 .padding(.horizontal)
             }
         }
         .padding(.vertical)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .appCard()
         .padding(.horizontal)
     }
     
@@ -397,9 +466,29 @@ struct TrackingView: View {
         let date: Date
         let normalizedValue: Double
     }
+
+    func musclesWorked(in sessions: [ExerciseSession]) -> Set<TargetMuscle> {
+        sessions.reduce(into: Set<TargetMuscle>()) { result, session in
+            guard let exercise = session.exercise else { return }
+            result.formUnion(exercise.targetMuscles)
+        }
+    }
     
     func normalizedProgressData(for exercise: Exercise) -> [ProgressPoint] {
         let sortedSessions = exercise.sessions.sorted { $0.date < $1.date }
+
+        if exercise.isCardio {
+            guard let firstRunTime = sortedSessions.compactMap(\.runningTime).first, firstRunTime > 0 else {
+                return []
+            }
+
+            return sortedSessions.compactMap { session in
+                guard let runTime = session.runningTime else { return nil }
+                let normalizedValue = ((runTime - firstRunTime) / firstRunTime) * 100
+                return ProgressPoint(date: session.date, normalizedValue: normalizedValue)
+            }
+        }
+
         guard let firstSession = sortedSessions.first,
               let firstMaxWeight = firstSession.sets.map({ $0.weight }).max(),
               firstMaxWeight > 0 else {
@@ -411,6 +500,190 @@ struct TrackingView: View {
             let normalizedValue = ((maxWeight - firstMaxWeight) / firstMaxWeight) * 100
             return ProgressPoint(date: session.date, normalizedValue: normalizedValue)
         }
+    }
+}
+
+struct WorkoutSummaryView: View {
+    @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.modelContext) private var context
+    @Query(sort: \ExerciseSession.date, order: .reverse) var allSessions: [ExerciseSession]
+    let date: Date
+
+    var sessions: [ExerciseSession] {
+        allSessions
+            .filter { Calendar.current.isDate($0.date, inSameDayAs: date) }
+            .sorted { $0.date < $1.date }
+    }
+
+    var strengthSessions: [ExerciseSession] {
+        sessions.filter { $0.exercise?.isCardio != true }
+    }
+
+    var cardioSessions: [ExerciseSession] {
+        sessions.filter { $0.exercise?.isCardio == true }
+    }
+
+    var totalSets: Int {
+        strengthSessions.reduce(0) { $0 + $1.sets.count }
+    }
+
+    var body: some View {
+        ZStack {
+            themeManager.background.ignoresSafeArea()
+
+            if sessions.isEmpty {
+                VStack(spacing: 15) {
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .font(.system(size: 56))
+                        .foregroundColor(Color.appAccent.opacity(0.5))
+                    Text("No workouts on this day")
+                        .font(.headline)
+                        .foregroundColor(themeManager.primaryText)
+                    Text(date.formatted(date: .long, time: .omitted))
+                        .foregroundColor(themeManager.secondaryText)
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(date.formatted(date: .long, time: .omitted))
+                                .appHeadingStyle()
+                                .foregroundColor(themeManager.primaryText)
+                            Text("\(sessions.count) sessions recorded")
+                                .appCaptionStyle()
+                                .foregroundColor(themeManager.secondaryText)
+                        }
+                        .padding(.horizontal)
+
+                        HStack(spacing: 12) {
+                            WorkoutSummaryMetric(title: "Strength", value: "\(strengthSessions.count)", icon: "dumbbell.fill", themeManager: themeManager)
+                            WorkoutSummaryMetric(title: "Cardio", value: "\(cardioSessions.count)", icon: "figure.run", themeManager: themeManager)
+                            WorkoutSummaryMetric(title: "Sets", value: "\(totalSets)", icon: "number", themeManager: themeManager)
+                        }
+                        .padding(.horizontal)
+
+                        ForEach(sessions) { session in
+                            NavigationLink {
+                                SessionDetailView(session: session)
+                                    .environmentObject(themeManager)
+                            } label: {
+                                WorkoutSummarySessionCard(session: session, themeManager: themeManager)
+                            }
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    deleteSession(session)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal)
+                        }
+
+                        Text("Swipe left to delete a session.")
+                            .appCaptionStyle()
+                            .foregroundColor(themeManager.secondaryText)
+                            .padding(.horizontal)
+                    }
+                    .padding(.vertical)
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+        .navigationTitle(date.formatted(.dateTime.weekday(.wide).month().day()))
+        .navigationBarTitleDisplayMode(.inline)
+        .preferredColorScheme(themeManager.colorScheme)
+    }
+
+    private func deleteSession(_ session: ExerciseSession) {
+        for set in session.sets {
+            context.delete(set)
+        }
+        context.delete(session)
+        try? context.save()
+    }
+}
+
+struct WorkoutSummaryMetric: View {
+    let title: String
+    let value: String
+    let icon: String
+    let themeManager: ThemeManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Image(systemName: icon)
+                .foregroundColor(Color.appAccent)
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(themeManager.primaryText)
+            Text(title)
+                .appCaptionStyle()
+                .foregroundColor(themeManager.secondaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding()
+        .appCard()
+    }
+}
+
+struct WorkoutSummarySessionCard: View {
+    let session: ExerciseSession
+    let themeManager: ThemeManager
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: session.exercise?.isCardio == true ? "figure.run.circle.fill" : "dumbbell.fill")
+                .font(.title2)
+                .foregroundColor(session.exercise?.isCardio == true ? .orange : Color.appAccent)
+                .frame(width: 34)
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(session.exercise?.name ?? "Unknown")
+                        .font(.headline)
+                        .foregroundColor(themeManager.primaryText)
+                    Spacer()
+                    Text(session.date.formatted(date: .omitted, time: .shortened))
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
+
+                HStack(spacing: 8) {
+                    Text(session.location.rawValue)
+                    Text(session.exercise?.isCardio == true ? cardioSummary : strengthSummary)
+                }
+                .appCaptionStyle()
+                .foregroundColor(themeManager.secondaryText)
+
+                if !session.notes.isEmpty {
+                    Text(session.notes)
+                        .font(.caption)
+                        .foregroundColor(themeManager.secondaryText)
+                        .lineLimit(2)
+                }
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(themeManager.secondaryText)
+                .padding(.top, 4)
+        }
+        .padding()
+        .appCard()
+    }
+
+    private var strengthSummary: String {
+        "\(session.sets.count) sets"
+    }
+
+    private var cardioSummary: String {
+        if let runningTime = session.runningTime {
+            return String(format: "%.1f min run", runningTime)
+        }
+
+        return "Cardio"
     }
 }
 
@@ -479,6 +752,10 @@ struct SessionRowView: View {
                         .font(.caption)
                         .foregroundColor(themeManager.secondaryText)
                 }
+
+                Text(session.location.rawValue)
+                    .font(.caption2)
+                    .foregroundColor(themeManager.secondaryText)
             }
             
             Spacer()
@@ -512,6 +789,10 @@ struct SessionDetailView: View {
                         Text(session.date.formatted(date: .long, time: .shortened))
                             .font(.subheadline)
                             .foregroundColor(themeManager.secondaryText)
+
+                        Label(session.location.rawValue, systemImage: session.location == .home ? "house.fill" : "figure.strengthtraining.traditional")
+                            .font(.subheadline)
+                            .foregroundColor(Color.appAccent)
                     }
                     .padding()
                     
@@ -662,6 +943,7 @@ struct EditSessionView: View {
     
     @State private var machineSettings: String = ""
     @State private var sessionNotes: String = ""
+    @State private var selectedLocation: WorkoutLocation = .planetFitness
     @State private var editedSets: [EditableSet] = []
     
     @State private var warmUpTime: Double? = nil
@@ -692,6 +974,19 @@ struct EditSessionView: View {
                     } else {
                         editStrengthInterface
                     }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Workout Location").font(.headline).foregroundColor(themeManager.secondaryText)
+                        Picker("Workout Location", selection: $selectedLocation) {
+                            ForEach(WorkoutLocation.allCases) { location in
+                                Text(location.rawValue).tag(location)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding()
+                    .background(themeManager.cardBackground)
+                    .cornerRadius(12)
                     
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Session Notes").font(.headline).foregroundColor(themeManager.secondaryText)
@@ -869,6 +1164,7 @@ struct EditSessionView: View {
     func loadSessionData() {
         machineSettings = session.machineSettings
         sessionNotes = session.notes
+        selectedLocation = session.location
         
         warmUpTime = session.warmUpTime
         runningTime = session.runningTime
@@ -914,6 +1210,7 @@ struct EditSessionView: View {
     func saveChanges() {
         session.machineSettings = machineSettings
         session.notes = sessionNotes
+        session.location = selectedLocation
         session.totalSets = editedSets.count
         
         if session.exercise?.isCardio == true {
