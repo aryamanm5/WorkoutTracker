@@ -15,6 +15,7 @@ struct BodyWeightView: View {
     @State private var newNotes: String = ""
     @State private var showingUnusualWeightAlert = false
     @State private var pendingWeightSave = false
+    @State private var entryPendingDeletion: BodyWeightEntry?
     @State private var selectedProgressPhotoItem: PhotosPickerItem?
     @State private var progressPhotoNotes = ""
     
@@ -122,24 +123,14 @@ struct BodyWeightView: View {
                                     .foregroundColor(themeManager.secondaryText)
                                     .padding()
                             } else {
-                                Text("Swipe left to delete")
-                                    .font(.caption)
-                                    .foregroundColor(themeManager.secondaryText)
-                                
-                                List {
-                                    ForEach(entries) { entry in
-                                        WeightEntryRow(
-                                            entry: entry,
-                                            themeManager: themeManager
-                                        )
-                                        .listRowInsets(EdgeInsets())
-                                        .listRowBackground(Color.clear)
+                                ForEach(entries) { entry in
+                                    WeightEntryRow(
+                                        entry: entry,
+                                        themeManager: themeManager
+                                    ) {
+                                        entryPendingDeletion = entry
                                     }
-                                    .onDelete(perform: deleteEntries)
                                 }
-                                .listStyle(.plain)
-                                .scrollDisabled(true)
-                                .frame(height: CGFloat(entries.count) * 80)
                             }
                         }
                         .padding()
@@ -151,6 +142,7 @@ struct BodyWeightView: View {
                 }
             }
             .navigationTitle("Weight & Creatine")
+            .dismissableKeyboard()
             .toolbarColorScheme(themeManager.colorScheme, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -162,6 +154,7 @@ struct BodyWeightView: View {
             }
             .sheet(isPresented: $showingAddEntry) {
                 addEntrySheet
+                    .fontDesign(themeManager.selectedFont.design)
             }
             .alert("Check weight", isPresented: $showingUnusualWeightAlert) {
                 Button("Edit", role: .cancel) {
@@ -173,6 +166,24 @@ struct BodyWeightView: View {
                 }
             } message: {
                 Text("This weight is much higher than your most recent entry. Is it correct?")
+            }
+            .confirmationDialog(
+                "Delete this weight entry?",
+                isPresented: Binding(
+                    get: { entryPendingDeletion != nil },
+                    set: { if !$0 { entryPendingDeletion = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let entry = entryPendingDeletion {
+                        deleteWeightEntry(entry)
+                    }
+                    entryPendingDeletion = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    entryPendingDeletion = nil
+                }
             }
             .onAppear(perform: loadCreatineStatus)
             .preferredColorScheme(themeManager.colorScheme)
@@ -347,6 +358,7 @@ struct BodyWeightView: View {
             }
             .navigationTitle("Log Weight")
             .navigationBarTitleDisplayMode(.inline)
+            .dismissableKeyboard()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { showingAddEntry = false }
@@ -430,14 +442,6 @@ struct BodyWeightView: View {
         let impact = UIImpactFeedbackGenerator(style: .medium)
         impact.impactOccurred()
     }
-    func deleteEntries(at offsets: IndexSet) {
-        for index in offsets {
-            context.delete(entries[index])
-        }
-
-        try? context.save()
-    }
-    
     func saveEntry() {
         guard let weight = newWeight else { return }
         if shouldConfirmWeight(weight), !pendingWeightSave {
@@ -532,7 +536,8 @@ struct ProgressPhotoCard: View {
 struct WeightEntryRow: View {
     let entry: BodyWeightEntry
     let themeManager: ThemeManager
-    
+    var onDelete: (() -> Void)? = nil
+
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -549,6 +554,16 @@ struct WeightEntryRow: View {
             Text("\(entry.weight, specifier: "%.1f") lbs")
                 .fontWeight(.semibold)
                 .foregroundColor(themeManager.primaryText)
+
+            if let onDelete {
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.subheadline)
+                        .foregroundColor(.red.opacity(0.8))
+                        .padding(.leading, 6)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding()
         .background(themeManager.secondaryBackground)

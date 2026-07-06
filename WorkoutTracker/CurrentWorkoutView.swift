@@ -19,15 +19,15 @@ struct CurrentWorkoutView: View {
                         
                         // Header Gradient Card
                         VStack(spacing: 10) {
-                            Text("Ready to crush it?")
+                            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
                                 .font(.subheadline)
                                 .foregroundColor(.white.opacity(0.8))
                                 .textCase(.uppercase)
-                            
+
                             Text(selectedWorkoutType == .rest ? "Rest Day" : "\(selectedWorkoutType.rawValue) Day")
                                 .font(.system(size: 40, weight: .heavy, design: .rounded))
                                 .foregroundColor(.white)
-                            
+
                             if selectedWorkoutType != .rest {
                                 Text("Let's build some muscle.")
                                     .font(.body)
@@ -474,7 +474,7 @@ struct WorkoutLoggingView: View {
                                     TextField("lbs", value: $suggestedNextWeight, format: .number)
                                         .keyboardType(.decimalPad)
                                         .padding(10)
-                                        .background(themeManager.cardBackground)
+                                        .background(themeManager.inputBackground)
                                         .cornerRadius(8)
                                         .frame(width: 100)
                                         .foregroundColor(themeManager.primaryText)
@@ -570,6 +570,7 @@ struct WorkoutLoggingView: View {
         }
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
+        .dismissableKeyboard()
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 RestTimerView(seconds: $restTimerSeconds, isRunning: restTimerRunning)
@@ -632,7 +633,7 @@ struct WorkoutLoggingView: View {
             weight = suggested
         }
         
-        let plateMathExercises = ["bench press", "leg press"]
+        let plateMathExercises = ["bench press", "leg press", "squat", "deadlift", "smith", "barbell"]
         showPlateCalculator = plateMathExercises.contains(where: { exercise.name.lowercased().contains($0) })
     }
     
@@ -726,7 +727,7 @@ struct WorkoutLoggingView: View {
                 }
                 
                 if showPlateCalculator {
-                    PlateCalculatorView(weight: $weight)
+                    PlateCalculatorView(weight: $weight, exerciseName: exercise.name)
                         .environmentObject(themeManager)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 } else {
@@ -737,6 +738,10 @@ struct WorkoutLoggingView: View {
                         .cornerRadius(12)
                         .font(.title3)
                         .foregroundColor(themeManager.primaryText)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(themeManager.cardBorder, lineWidth: 1)
+                        )
                 }
             }
             
@@ -975,118 +980,140 @@ struct WorkoutLoggingView: View {
     }
 }
 
-// MARK: - Premium Interactive Plate Calculator
+// MARK: - Plate Calculator
+enum BarOption: String, CaseIterable, Identifiable {
+    case barbell = "Bar"
+    case smith = "Smith"
+    case legPress = "Leg Press"
+
+    var id: String { rawValue }
+
+    func weight(legPressSled: Double) -> Double {
+        switch self {
+        case .barbell: return 45
+        case .smith: return 25
+        case .legPress: return legPressSled
+        }
+    }
+
+    /// Best default for a given exercise name.
+    static func defaultOption(for exerciseName: String) -> BarOption {
+        let name = exerciseName.lowercased()
+        if name.contains("leg press") { return .legPress }
+        if name.contains("smith") { return .smith }
+        return .barbell
+    }
+}
+
 struct PlateCalculatorView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @Binding var weight: Double?
-    
-    @State private var barWeight: Double = 45.0
-    @State private var plates: [Double] = []
-    
+    let exerciseName: String
+
+    @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
+
+    @State private var barOption: BarOption = .barbell
+    @State private var plates: [PlateInstance] = []
+
+    struct PlateInstance: Identifiable {
+        let id = UUID()
+        let value: Double
+    }
+
     let availablePlates: [Double] = [45, 35, 25, 10, 5, 2.5]
-    
+
+    private var barWeight: Double {
+        barOption.weight(legPressSled: legPressSledWeight)
+    }
+
+    private var totalWeight: Double {
+        barWeight + plates.reduce(0) { $0 + $1.value } * 2
+    }
+
     var body: some View {
         VStack(spacing: 20) {
-            
+
             // Total Weight Readout
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(String(format: "%.1f", (weight ?? barWeight)))
-                    .font(.system(size: 40, weight: .heavy, design: .rounded))
-                    .foregroundColor(Color.appAccent)
-                    .contentTransition(.numericText())
-                Text("lbs")
-                    .font(.headline)
+            VStack(spacing: 4) {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(String(format: "%g", totalWeight))
+                        .font(.system(size: 40, weight: .heavy, design: .rounded))
+                        .foregroundColor(Color.appAccent)
+                        .contentTransition(.numericText())
+                    Text("lbs")
+                        .font(.headline)
+                        .foregroundColor(themeManager.secondaryText)
+                }
+                Text("\(barOption.rawValue) \(String(format: "%g", barWeight)) lbs + plates per side")
+                    .font(.caption)
                     .foregroundColor(themeManager.secondaryText)
             }
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: weight)
-            
-            // The Barbell Visual
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: totalWeight)
+
+            // The Barbell Visual (tap a plate to remove it)
             ZStack {
                 Rectangle()
                     .fill(LinearGradient(colors: [.gray.opacity(0.4), .gray.opacity(0.8)], startPoint: .top, endPoint: .bottom))
                     .frame(height: 12)
                     .cornerRadius(6)
-                
+
                 HStack(spacing: 2) {
                     Spacer()
-                    
+
                     HStack(spacing: 2) {
-                        ForEach(plates.reversed().indices, id: \.self) { i in
-                            PlateVisual(val: plates.reversed()[i])
-                                .onTapGesture { removePlate(at: plates.count - 1 - i) }
+                        ForEach(plates.reversed()) { plate in
+                            PlateVisual(val: plate.value)
+                                .onTapGesture { removePlate(plate) }
                         }
                     }
-                    
+
                     RoundedRectangle(cornerRadius: 2).fill(Color.gray).frame(width: 12, height: 25)
                     Spacer().frame(width: 80)
                     RoundedRectangle(cornerRadius: 2).fill(Color.gray).frame(width: 12, height: 25)
-                    
+
                     HStack(spacing: 2) {
-                        ForEach(plates.indices, id: \.self) { i in
-                            PlateVisual(val: plates[i])
-                                .onTapGesture { removePlate(at: i) }
+                        ForEach(plates) { plate in
+                            PlateVisual(val: plate.value)
+                                .onTapGesture { removePlate(plate) }
                         }
                     }
-                    
+
                     Spacer()
                 }
             }
             .frame(height: 100)
             .padding(.vertical, 10)
-            
+
             VStack(spacing: 15) {
-                HStack {
-                    Text("Bar:")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                    Picker("Bar Weight", selection: $barWeight) {
-                        Text("45 lb").tag(45.0)
-                        Text("35 lb").tag(35.0)
-                        Text("15 lb").tag(15.0)
-                        Text("Smith (25)").tag(25.0)
+                Picker("Bar", selection: $barOption) {
+                    ForEach(BarOption.allCases) { option in
+                        Text(option.rawValue).tag(option)
                     }
-                    .pickerStyle(.menu)
-                    .tint(themeManager.primaryText)
-                    
-                    Spacer()
-                    
-                    Button("Clear Bar") {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
-                            plates.removeAll()
-                            updateWeight()
-                        }
-                    }
-                    .font(.caption)
-                    .foregroundColor(.red)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.red.opacity(0.1))
-                    .cornerRadius(8)
                 }
-                
+                .pickerStyle(.segmented)
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(availablePlates, id: \.self) { plateVal in
-                            Button(action: {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-                                    plates.append(plateVal)
-                                    plates.sort(by: >)
-                                    updateWeight()
-                                    let impact = UIImpactFeedbackGenerator(style: .rigid)
-                                    impact.impactOccurred()
-                                }
-                            }) {
-                                VStack {
-                                    Text("+\(String(format: "%g", plateVal))")
-                                        .font(.headline)
-                                        .fontWeight(.bold)
-                                        .foregroundColor(.white)
-                                }
-                                .frame(width: 55, height: 55)
-                                .background(plateColor(for: plateVal))
-                                .cornerRadius(10)
-                                .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 2)
+                            Button(action: { addPlate(plateVal) }) {
+                                Text("+\(String(format: "%g", plateVal))")
+                                    .font(.headline)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.white)
+                                    .frame(width: 55, height: 55)
+                                    .background(plateColor(for: plateVal))
+                                    .cornerRadius(10)
+                                    .shadow(color: .black.opacity(0.2), radius: 3, x: 0, y: 2)
                             }
+                        }
+
+                        Button(action: clearPlates) {
+                            Text("Clear")
+                                .font(.headline)
+                                .foregroundColor(.red)
+                                .frame(width: 55, height: 55)
+                                .background(Color.red.opacity(0.12))
+                                .cornerRadius(10)
                         }
                     }
                     .padding(.horizontal, 2)
@@ -1097,52 +1124,66 @@ struct PlateCalculatorView: View {
         .padding()
         .background(themeManager.cardBackground)
         .cornerRadius(16)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(themeManager.cardBorder, lineWidth: 1)
+        )
         .onAppear {
-            if let currentW = weight, currentW >= barWeight {
-                calculatePlatesFor(target: currentW)
-            } else {
-                updateWeight()
+            barOption = BarOption.defaultOption(for: exerciseName)
+            if let currentWeight = weight, currentWeight > barWeight {
+                decomposeIntoPlates(target: currentWeight)
             }
+            weight = totalWeight
         }
-        .onChange(of: barWeight) {
-            updateWeight()
+        .onChange(of: barOption) {
+            weight = totalWeight
         }
     }
-    
-    private func updateWeight() {
-        let total = barWeight + (plates.reduce(0, +) * 2)
-        weight = total
-    }
-    
-    private func removePlate(at index: Int) {
+
+    private func addPlate(_ value: Double) {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
-            plates.remove(at: index)
-            updateWeight()
-            let impact = UIImpactFeedbackGenerator(style: .soft)
-            impact.impactOccurred()
+            plates.append(PlateInstance(value: value))
+            plates.sort { $0.value > $1.value }
+            weight = totalWeight
+        }
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+    }
+
+    private func removePlate(_ plate: PlateInstance) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+            plates.removeAll { $0.id == plate.id }
+            weight = totalWeight
+        }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+    }
+
+    private func clearPlates() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+            plates.removeAll()
+            weight = totalWeight
         }
     }
-    
-    private func calculatePlatesFor(target: Double) {
-        var remainingWeight = (target - barWeight) / 2.0
-        var newPlates: [Double] = []
-        
-        for p in availablePlates {
-            while remainingWeight >= p {
-                newPlates.append(p)
-                remainingWeight -= p
+
+    private func decomposeIntoPlates(target: Double) {
+        var remainingPerSide = (target - barWeight) / 2.0
+        var newPlates: [PlateInstance] = []
+
+        for plate in availablePlates {
+            while remainingPerSide >= plate {
+                newPlates.append(PlateInstance(value: plate))
+                remainingPerSide -= plate
             }
         }
         plates = newPlates
     }
-    
+
     private func plateColor(for val: Double) -> Color {
         switch val {
         case 45: return Color.red.opacity(0.9)
         case 35: return Color.blue.opacity(0.9)
         case 25: return Color.green.opacity(0.9)
-        case 10: return Color.black.opacity(0.8)
-        case 5: return Color.black.opacity(0.8)
+        case 10: return Color(white: 0.25)
+        case 5: return Color(white: 0.25)
         default: return Color.gray
         }
     }

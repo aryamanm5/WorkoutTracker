@@ -19,6 +19,8 @@ struct SettingsView: View {
     @State private var exportURL: URL?
     @State private var showingCSVImporter = false
     @State private var importMessage: String?
+
+    @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
     
     var body: some View {
         NavigationStack {
@@ -28,24 +30,56 @@ struct SettingsView: View {
                 List {
                     // Appearance Section
                     Section {
-                        Toggle(isOn: $themeManager.isDarkMode) {
+                        Picker(selection: $themeManager.appearance) {
+                            ForEach(AppAppearance.allCases) { appearance in
+                                Text(appearance.rawValue).tag(appearance)
+                            }
+                        } label: {
                             HStack {
-                                Image(systemName: themeManager.isDarkMode ? "moon.fill" : "sun.max.fill")
-                                    .foregroundColor(themeManager.isDarkMode ? .purple : .orange)
-                                Text("Dark Mode")
+                                Image(systemName: "circle.lefthalf.filled")
+                                    .foregroundColor(Color.appAccent)
+                                Text("Theme")
                                     .foregroundColor(themeManager.primaryText)
                             }
                         }
-                        .tint(.appAccent)
 
-                        Picker("Font", selection: $themeManager.selectedFont) {
+                        Picker(selection: $themeManager.selectedFont) {
                             ForEach(AppFontChoice.allCases) { fontChoice in
                                 Text(fontChoice.rawValue).tag(fontChoice)
                             }
+                        } label: {
+                            HStack {
+                                Image(systemName: "textformat")
+                                    .foregroundColor(Color.appAccent)
+                                Text("Font")
+                                    .foregroundColor(themeManager.primaryText)
+                            }
                         }
-                        .foregroundColor(themeManager.primaryText)
                     } header: {
                         Text("Appearance")
+                            .foregroundColor(themeManager.secondaryText)
+                    }
+                    .listRowBackground(themeManager.cardBackground)
+
+                    // Plate Math Section
+                    Section {
+                        HStack {
+                            Text("Leg Press Sled Weight")
+                                .foregroundColor(themeManager.primaryText)
+                            Spacer()
+                            TextField("167", value: $legPressSledWeight, format: .number)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                                .foregroundColor(themeManager.primaryText)
+                            Text("lbs")
+                                .foregroundColor(themeManager.secondaryText)
+                        }
+                    } header: {
+                        Text("Plate Math")
+                            .foregroundColor(themeManager.secondaryText)
+                    } footer: {
+                        Text("Starting weight of your gym's leg press sled, used by the plate calculator.")
                             .foregroundColor(themeManager.secondaryText)
                     }
                     .listRowBackground(themeManager.cardBackground)
@@ -153,8 +187,10 @@ struct SettingsView: View {
                 .listStyle(.insetGrouped)
             }
             .navigationTitle("Settings")
+            .dismissableKeyboard()
             .sheet(isPresented: $showingAddExercise) {
                 addExerciseSheet
+                    .fontDesign(themeManager.selectedFont.design)
             }
             .sheet(isPresented: $showingAddHistoricalWorkout) {
                 AddHistoricalWorkoutView()
@@ -355,20 +391,46 @@ struct SettingsView: View {
             let csvString = try String(contentsOf: url, encoding: .utf8)
             let summary = try importCSVString(csvString)
             try context.save()
-            importMessage = "Imported \(summary.sessions) sessions, \(summary.sets) sets, and \(summary.weights) body weight entries."
+            var message = "Imported \(summary.sessions) sessions, \(summary.sets) sets, and \(summary.weights) body weight entries."
+            if summary.skipped > 0 {
+                message += " Skipped \(summary.skipped) entries that were already in the app."
+            }
+            importMessage = message
         } catch {
             importMessage = "Import failed: \(error.localizedDescription)"
         }
     }
 
-    private func importCSVString(_ csvString: String) throws -> (sessions: Int, sets: Int, weights: Int) {
+    private func importCSVString(_ csvString: String) throws -> (sessions: Int, sets: Int, weights: Int, skipped: Int) {
         let rows = parseCSVRows(csvString)
         var index = 0
         var sessionsImported = 0
         var setsImported = 0
         var weightsImported = 0
+        var duplicatesSkipped = 0
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+
+        // Look up exercises against the live context (the view's @Query snapshot
+        // doesn't refresh mid-import, which used to duplicate every exercise),
+        // and remember what already exists so re-importing an export is a no-op.
+        var exerciseCache: [String: Exercise] = [:]
+        var existingSessionKeys = Set<String>()
+        var existingWeightKeys = Set<String>()
+
+        if let storedExercises = try? context.fetch(FetchDescriptor<Exercise>()) {
+            for exercise in storedExercises {
+                exerciseCache[exercise.name.lowercased()] = exercise
+                for session in exercise.sessions {
+                    existingSessionKeys.insert(sessionDedupKey(exerciseName: exercise.name, date: session.date))
+                }
+            }
+        }
+        if let storedWeights = try? context.fetch(FetchDescriptor<BodyWeightEntry>()) {
+            for entry in storedWeights {
+                existingWeightKeys.insert("\(entry.date.timeIntervalSince1970)|\(entry.weight)")
+            }
+        }
 
         while index < rows.count {
             let row = rows[index]
@@ -391,14 +453,22 @@ struct SettingsView: View {
                         continue
                     }
 
+                    // A session for this exercise at this exact time already
+                    // exists in the app — skip the row instead of duplicating.
+                    if existingSessionKeys.contains(sessionDedupKey(exerciseName: exerciseName, date: date)) {
+                        duplicatesSkipped += 1
+                        index += 1
+                        continue
+                    }
+
                     let workoutType = WorkoutType(rawValue: typeText) ?? .push
                     let isCardio = value(in: workoutRow, header: header, column: "IsCardio") == "Yes"
-                    let exercise = findOrCreateExercise(named: exerciseName, type: workoutType, isCardio: isCardio)
+                    let exercise = findOrCreateExercise(named: exerciseName, type: workoutType, isCardio: isCardio, cache: &exerciseCache)
                     let locationText = value(in: workoutRow, header: header, column: "Location") ?? WorkoutLocation.planetFitness.rawValue
                     let location = WorkoutLocation(rawValue: locationText) ?? .planetFitness
                     let machineSettings = value(in: workoutRow, header: header, column: "MachineSettings") ?? ""
                     let sessionNotes = value(in: workoutRow, header: header, column: "SessionNotes") ?? ""
-                    let sessionKey = "\(date.timeIntervalSince1970)-\(exerciseName)-\(machineSettings)-\(sessionNotes)"
+                    let sessionKey = "\(date.timeIntervalSince1970)-\(exerciseName.lowercased())-\(machineSettings)-\(sessionNotes)"
                     let session = importedSessions[sessionKey] ?? {
                         let newSession = ExerciseSession(
                             date: date,
@@ -453,12 +523,20 @@ struct SettingsView: View {
                         break
                     }
 
+                    let weightKey = "\(date.timeIntervalSince1970)|\(weight)"
+                    if existingWeightKeys.contains(weightKey) {
+                        duplicatesSkipped += 1
+                        index += 1
+                        continue
+                    }
+
                     let entry = BodyWeightEntry(
                         date: date,
                         weight: weight,
                         notes: value(in: weightRow, header: header, column: "Notes") ?? ""
                     )
                     context.insert(entry)
+                    existingWeightKeys.insert(weightKey)
                     weightsImported += 1
                     index += 1
                 }
@@ -467,11 +545,15 @@ struct SettingsView: View {
             }
         }
 
-        return (sessionsImported, setsImported, weightsImported)
+        return (sessionsImported, setsImported, weightsImported, duplicatesSkipped)
     }
 
-    private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool) -> Exercise {
-        if let existing = exercises.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }) {
+    private func sessionDedupKey(exerciseName: String, date: Date) -> String {
+        "\(exerciseName.lowercased())|\(date.timeIntervalSince1970)"
+    }
+
+    private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool, cache: inout [String: Exercise]) -> Exercise {
+        if let existing = cache[name.lowercased()] {
             existing.isCardio = isCardio
             existing.type = type
             return existing
@@ -479,6 +561,7 @@ struct SettingsView: View {
 
         let exercise = Exercise(name: name, type: type, isCardio: isCardio)
         context.insert(exercise)
+        cache[name.lowercased()] = exercise
         return exercise
     }
 
@@ -580,7 +663,7 @@ struct ExerciseMuscleEditorView: View {
 
                     MuscleDiagramView(
                         activatedMuscles: selectedMuscles,
-                        restingMuscles: Set(TargetMuscle.allCases).subtracting(selectedMuscles),
+                        restingMuscles: [],
                         selectedMuscles: $selectedMuscles,
                         isEditable: true
                     )
@@ -589,16 +672,14 @@ struct ExerciseMuscleEditorView: View {
                     .appCard()
 
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("Selected Muscles")
+                        Text("Target Muscles")
                             .font(.headline)
                             .foregroundColor(themeManager.primaryText)
+                        Text("Tap to toggle. Some muscles (like lats or cardio) can only be selected here.")
+                            .font(.caption)
+                            .foregroundColor(themeManager.secondaryText)
 
-                        if selectedMuscles.isEmpty {
-                            Text("No muscles selected")
-                                .foregroundColor(themeManager.secondaryText)
-                        } else {
-                            FlexibleMuscleTagView(muscles: selectedMuscles, themeManager: themeManager)
-                        }
+                        FlexibleMuscleTagView(selectedMuscles: $selectedMuscles, themeManager: themeManager)
                     }
                     .padding()
                     .appCard()
@@ -632,21 +713,31 @@ struct ExerciseMuscleEditorView: View {
 }
 
 struct FlexibleMuscleTagView: View {
-    let muscles: Set<TargetMuscle>
+    @Binding var selectedMuscles: Set<TargetMuscle>
     let themeManager: ThemeManager
 
     var body: some View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
-            ForEach(muscles.sorted { $0.displayName < $1.displayName }) { muscle in
-                Text(muscle.displayName)
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity)
-                    .background(Color.red)
-                    .cornerRadius(10)
+            ForEach(TargetMuscle.allCases.sorted { $0.displayName < $1.displayName }) { muscle in
+                let isSelected = selectedMuscles.contains(muscle)
+                Button {
+                    if isSelected {
+                        selectedMuscles.remove(muscle)
+                    } else {
+                        selectedMuscles.insert(muscle)
+                    }
+                } label: {
+                    Text(muscle.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(isSelected ? .white : themeManager.secondaryText)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .frame(maxWidth: .infinity)
+                        .background(isSelected ? Color(red: 0.85, green: 0.15, blue: 0.15) : themeManager.inputBackground)
+                        .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -791,6 +882,7 @@ struct AddHistoricalWorkoutView: View {
             }
             .navigationTitle("Add Historical Workout")
             .navigationBarTitleDisplayMode(.inline)
+            .dismissableKeyboard()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -798,6 +890,7 @@ struct AddHistoricalWorkoutView: View {
                 }
             }
             .preferredColorScheme(themeManager.colorScheme)
+            .fontDesign(themeManager.selectedFont.design)
         }
     }
     

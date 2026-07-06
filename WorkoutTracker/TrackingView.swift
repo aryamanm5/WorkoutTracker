@@ -20,6 +20,7 @@ struct TrackingView: View {
     @State private var selectedDate: Date = Date()
     @State private var currentMonth: Date = Date()
     @State private var progressFilter: ProgressFilter = .all
+    @State private var selectedChartExercise: Exercise?
     
     var activeExercises: [Exercise] {
         allExercises.filter { !$0.sessions.isEmpty }
@@ -57,8 +58,15 @@ struct TrackingView: View {
         musclesWorked(in: todaysSessions)
     }
 
-    var restingMusclesToday: Set<TargetMuscle> {
-        Set(TargetMuscle.allCases).subtracting(activatedMusclesToday)
+    /// Muscles trained in the last 3 days (excluding today) are still recovering.
+    /// Muscles that weren't trained recently render with the default (gray) fill.
+    var recoveringMuscles: Set<TargetMuscle> {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        guard let windowStart = calendar.date(byAdding: .day, value: -3, to: today) else { return [] }
+
+        let recentSessions = allSessions.filter { $0.date >= windowStart && $0.date < today }
+        return musclesWorked(in: recentSessions).subtracting(activatedMusclesToday)
     }
     
     var body: some View {
@@ -155,7 +163,7 @@ struct TrackingView: View {
 
             MuscleDiagramView(
                 activatedMuscles: activatedMusclesToday,
-                restingMuscles: restingMusclesToday,
+                restingMuscles: recoveringMuscles,
                 selectedMuscles: nil,
                 isEditable: false
             )
@@ -193,7 +201,7 @@ struct TrackingView: View {
             .padding(.horizontal)
             
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 10) {
-                ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
+                ForEach(Array(weekdayHeaders().enumerated()), id: \.offset) { _, day in
                     Text(day)
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -201,9 +209,9 @@ struct TrackingView: View {
                 }
             }
             .padding(.horizontal)
-            
+
             LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                ForEach(daysInMonth(), id: \.self) { date in
+                ForEach(Array(daysInMonth().enumerated()), id: \.offset) { _, date in
                     if let date = date {
                         NavigationLink(value: date) {
                             CalendarDayView(
@@ -230,14 +238,26 @@ struct TrackingView: View {
         .padding(.horizontal)
     }
     
+    /// The exercise shown in the progress chart: the user's pick if it still
+    /// matches the filter, otherwise the most recently trained exercise.
+    var chartExercise: Exercise? {
+        if let selected = selectedChartExercise,
+           filteredProgressExercises.contains(where: { $0.persistentModelID == selected.persistentModelID }) {
+            return selected
+        }
+        return filteredProgressExercises.max {
+            ($0.sessions.map(\.date).max() ?? .distantPast) < ($1.sessions.map(\.date).max() ?? .distantPast)
+        }
+    }
+
     var progressChartSection: some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Progress Overview")
+                    Text("Progress")
                         .appHeadingStyle()
                         .foregroundColor(themeManager.primaryText)
-                    Text("Relative change from each exercise's first logged session")
+                    Text(chartExercise?.isCardio == true ? "Run time per session" : "Top set weight per session")
                         .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                 }
@@ -253,64 +273,108 @@ struct TrackingView: View {
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
-            
-            if filteredProgressExercises.isEmpty {
-                Text("Complete some workouts to see progress")
-                    .foregroundColor(themeManager.secondaryText)
-                    .padding()
-            } else {
-                Chart {
-                    RuleMark(y: .value("Baseline", 0))
-                        .foregroundStyle(themeManager.secondaryText.opacity(0.35))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
 
-                    ForEach(filteredProgressExercises) { exercise in
-                        ForEach(normalizedProgressData(for: exercise)) { point in
-                            LineMark(
-                                x: .value("Date", point.date),
-                                y: .value("Progress", point.normalizedValue)
-                            )
-                            .foregroundStyle(by: .value("Exercise", exercise.name))
-                            .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-
-                            PointMark(
-                                x: .value("Date", point.date),
-                                y: .value("Progress", point.normalizedValue)
-                            )
-                            .foregroundStyle(by: .value("Exercise", exercise.name))
-                            .symbolSize(36)
-                        }
-                    }
-                }
-                .chartLegend(position: .bottom, alignment: .leading)
-                .chartYAxisLabel("Change")
-                .chartYAxis {
-                    AxisMarks(position: .leading) { value in
-                        AxisGridLine()
-                            .foregroundStyle(themeManager.secondaryText.opacity(0.2))
-                        AxisValueLabel {
-                            if let percentage = value.as(Double.self) {
-                                Text("\(Int(percentage))%")
-                                    .foregroundColor(themeManager.secondaryText)
+            if let exercise = chartExercise {
+                Menu {
+                    ForEach(filteredProgressExercises) { option in
+                        Button {
+                            selectedChartExercise = option
+                        } label: {
+                            if option.persistentModelID == exercise.persistentModelID {
+                                Label(option.name, systemImage: "checkmark")
+                            } else {
+                                Text(option.name)
                             }
                         }
                     }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic) { _ in
-                        AxisGridLine()
-                            .foregroundStyle(themeManager.secondaryText.opacity(0.18))
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                            .foregroundStyle(themeManager.secondaryText)
+                } label: {
+                    HStack {
+                        Text(exercise.name)
+                            .font(.headline)
+                            .foregroundColor(themeManager.primaryText)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption)
+                            .foregroundColor(themeManager.secondaryText)
+                        Spacer()
+                        if let best = bestValue(for: exercise) {
+                            Text(exercise.isCardio
+                                 ? String(format: "Best: %.1f min", best)
+                                 : String(format: "Best: %.1f lbs", best))
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Color.appAccent)
+                        }
                     }
+                    .padding(12)
+                    .background(themeManager.inputBackground)
+                    .cornerRadius(10)
                 }
-                .chartPlotStyle { plotArea in
-                    plotArea
-                        .background(themeManager.secondaryBackground.opacity(0.4))
-                        .cornerRadius(10)
+                .padding(.horizontal)
+
+                let data = progressData(for: exercise)
+                if data.count < 2 {
+                    Text("Log this exercise a few more times to see a trend.")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                        .padding()
+                } else {
+                    let domain = chartDomain(for: data)
+                    Chart(data) { point in
+                        AreaMark(
+                            x: .value("Date", point.date),
+                            yStart: .value("Base", domain.lowerBound),
+                            yEnd: .value("Value", point.value)
+                        )
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.appAccent.opacity(0.25), .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value("Value", point.value)
+                        )
+                        .interpolationMethod(.monotone)
+                        .foregroundStyle(Color.appAccent)
+                        .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+
+                        PointMark(
+                            x: .value("Date", point.date),
+                            y: .value("Value", point.value)
+                        )
+                        .foregroundStyle(Color.appAccent)
+                        .symbolSize(42)
+                    }
+                    .chartYScale(domain: domain)
+                    .chartYAxisLabel(exercise.isCardio ? "Minutes" : "lbs")
+                    .chartYAxis {
+                        AxisMarks(position: .leading) { _ in
+                            AxisGridLine()
+                                .foregroundStyle(themeManager.secondaryText.opacity(0.2))
+                            AxisValueLabel()
+                                .foregroundStyle(themeManager.secondaryText)
+                        }
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic) { _ in
+                            AxisGridLine()
+                                .foregroundStyle(themeManager.secondaryText.opacity(0.18))
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                                .foregroundStyle(themeManager.secondaryText)
+                        }
+                    }
+                    .frame(height: 240)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
                 }
-                .frame(height: 300)
-                .padding()
+            } else {
+                Text("Complete some workouts to see progress")
+                    .foregroundColor(themeManager.secondaryText)
+                    .padding()
             }
         }
         .padding(.vertical)
@@ -377,27 +441,30 @@ struct TrackingView: View {
         }
     }
     
+    func weekdayHeaders() -> [String] {
+        let calendar = Calendar.current
+        let symbols = calendar.veryShortWeekdaySymbols
+        let first = calendar.firstWeekday - 1
+        return Array(symbols[first...] + symbols[..<first])
+    }
+
     func daysInMonth() -> [Date?] {
         let calendar = Calendar.current
-        
-        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth),
-              let monthFirstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start) else {
+
+        guard let monthInterval = calendar.dateInterval(of: .month, for: currentMonth) else {
             return []
         }
-        
-        var days: [Date?] = []
-        var currentDate = monthFirstWeek.start
-        
+
         let firstDayWeekday = calendar.component(.weekday, from: monthInterval.start)
-        for _ in 1..<firstDayWeekday {
-            days.append(nil)
-        }
-        
+        let leadingBlanks = (firstDayWeekday - calendar.firstWeekday + 7) % 7
+        var days: [Date?] = Array(repeating: nil, count: leadingBlanks)
+
+        var currentDate = monthInterval.start
         while currentDate < monthInterval.end {
             days.append(currentDate)
             currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
         }
-        
+
         return days
     }
     
@@ -436,23 +503,27 @@ struct TrackingView: View {
         let calendar = Calendar.current
         var streak = 0
         var currentDate = calendar.startOfDay(for: Date())
-        
+
+        // Not having worked out *yet* today shouldn't reset the streak.
+        if !hasWorkout(on: currentDate) && !hasCardio(on: currentDate) {
+            currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
+        }
+
         while true {
+            let didTrain = hasWorkout(on: currentDate) || hasCardio(on: currentDate)
             let weekday = calendar.component(.weekday, from: currentDate)
-            
-            if weekday == 1 || weekday == 7 {
-                currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
-                continue
-            }
-            
-            if hasWorkout(on: currentDate) || hasCardio(on: currentDate) {
+            let isWeekend = weekday == 1 || weekday == 7
+
+            if didTrain {
                 streak += 1
-                currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
-            } else {
+            } else if !isWeekend {
+                // Weekends are rest days and don't break the streak.
                 break
             }
+
+            currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
         }
-        
+
         return streak
     }
     
@@ -464,7 +535,7 @@ struct TrackingView: View {
     struct ProgressPoint: Identifiable {
         let id = UUID()
         let date: Date
-        let normalizedValue: Double
+        let value: Double
     }
 
     func musclesWorked(in sessions: [ExerciseSession]) -> Set<TargetMuscle> {
@@ -473,33 +544,37 @@ struct TrackingView: View {
             result.formUnion(exercise.targetMuscles)
         }
     }
-    
-    func normalizedProgressData(for exercise: Exercise) -> [ProgressPoint] {
+
+    /// Actual values per session: top set weight for strength, run time for cardio.
+    func progressData(for exercise: Exercise) -> [ProgressPoint] {
         let sortedSessions = exercise.sessions.sorted { $0.date < $1.date }
 
         if exercise.isCardio {
-            guard let firstRunTime = sortedSessions.compactMap(\.runningTime).first, firstRunTime > 0 else {
-                return []
-            }
-
             return sortedSessions.compactMap { session in
-                guard let runTime = session.runningTime else { return nil }
-                let normalizedValue = ((runTime - firstRunTime) / firstRunTime) * 100
-                return ProgressPoint(date: session.date, normalizedValue: normalizedValue)
+                guard let runTime = session.runningTime, runTime > 0 else { return nil }
+                return ProgressPoint(date: session.date, value: runTime)
             }
         }
 
-        guard let firstSession = sortedSessions.first,
-              let firstMaxWeight = firstSession.sets.map({ $0.weight }).max(),
-              firstMaxWeight > 0 else {
-            return []
-        }
-        
         return sortedSessions.compactMap { session in
-            guard let maxWeight = session.sets.map({ $0.weight }).max() else { return nil }
-            let normalizedValue = ((maxWeight - firstMaxWeight) / firstMaxWeight) * 100
-            return ProgressPoint(date: session.date, normalizedValue: normalizedValue)
+            guard let maxWeight = session.sets.map(\.weight).max(), maxWeight > 0 else { return nil }
+            return ProgressPoint(date: session.date, value: maxWeight)
         }
+    }
+
+    func bestValue(for exercise: Exercise) -> Double? {
+        progressData(for: exercise).map(\.value).max()
+    }
+
+    /// A y-axis window padded around the data so trends stay readable
+    /// instead of being flattened against a zero baseline.
+    func chartDomain(for data: [ProgressPoint]) -> ClosedRange<Double> {
+        let values = data.map(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return 0...1
+        }
+        let padding = Swift.max((maxValue - minValue) * 0.15, 5)
+        return Swift.max(0, minValue - padding)...(maxValue + padding)
     }
 }
 
@@ -508,6 +583,8 @@ struct WorkoutSummaryView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ExerciseSession.date, order: .reverse) var allSessions: [ExerciseSession]
     let date: Date
+
+    @State private var sessionPendingDeletion: ExerciseSession?
 
     var sessions: [ExerciseSession] {
         allSessions
@@ -569,18 +646,18 @@ struct WorkoutSummaryView: View {
                             } label: {
                                 WorkoutSummarySessionCard(session: session, themeManager: themeManager)
                             }
-                            .swipeActions(edge: .trailing) {
+                            .buttonStyle(.plain)
+                            .contextMenu {
                                 Button(role: .destructive) {
-                                    deleteSession(session)
+                                    sessionPendingDeletion = session
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Label("Delete Session", systemImage: "trash")
                                 }
                             }
-                            .buttonStyle(.plain)
                             .padding(.horizontal)
                         }
 
-                        Text("Swipe left to delete a session.")
+                        Text("Touch and hold a session to delete it.")
                             .appCaptionStyle()
                             .foregroundColor(themeManager.secondaryText)
                             .padding(.horizontal)
@@ -592,6 +669,24 @@ struct WorkoutSummaryView: View {
         }
         .navigationTitle(date.formatted(.dateTime.weekday(.wide).month().day()))
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Delete this session?",
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(sessionPendingDeletion?.exercise?.name ?? "Session")", role: .destructive) {
+                if let session = sessionPendingDeletion {
+                    deleteSession(session)
+                }
+                sessionPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) {
+                sessionPendingDeletion = nil
+            }
+        }
         .preferredColorScheme(themeManager.colorScheme)
     }
 
@@ -1015,6 +1110,7 @@ struct EditSessionView: View {
         }
         .navigationTitle("Edit Session")
         .navigationBarTitleDisplayMode(.inline)
+        .dismissableKeyboard()
         .onAppear(perform: loadSessionData)
         .preferredColorScheme(themeManager.colorScheme)
     }
