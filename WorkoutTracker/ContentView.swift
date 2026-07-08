@@ -6,21 +6,21 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            CurrentWorkoutView()
+            TodayView()
                 .tabItem {
-                    Label("Workout", systemImage: "figure.strengthtraining.traditional")
+                    Label("Today", systemImage: "sun.max.fill")
                 }
                 .tag(0)
 
-            TrackingView()
+            InsightsView()
                 .tabItem {
-                    Label("Tracking", systemImage: "chart.bar.fill")
+                    Label("Insights", systemImage: "chart.xyaxis.line")
                 }
                 .tag(1)
 
             BodyWeightView()
                 .tabItem {
-                    Label("Body", systemImage: "scalemass.fill")
+                    Label("Body", systemImage: "figure.arms.open")
                 }
                 .tag(2)
 
@@ -33,5 +33,23 @@ struct ContentView: View {
         .tint(Color.appAccent)
         .fontDesign(themeManager.selectedFont.design)
         .preferredColorScheme(themeManager.colorScheme)
+    }
+}
+
+/// Sheets and full-screen covers are separate presentations, so the root
+/// font design and color scheme don't reach them — reapply on presentation.
+struct ThemedPresentation: ViewModifier {
+    @EnvironmentObject var themeManager: ThemeManager
+
+    func body(content: Content) -> some View {
+        content
+            .fontDesign(themeManager.selectedFont.design)
+            .preferredColorScheme(themeManager.colorScheme)
+    }
+}
+
+extension View {
+    func themedPresentation() -> some View {
+        modifier(ThemedPresentation())
     }
 }

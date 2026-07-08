@@ -1,19 +1,5 @@
 import SwiftUI
 
-private enum MuscleDisplayState {
-    case active
-    case resting
-
-    var color: Color {
-        switch self {
-        case .active:
-            Color(red: 0.85, green: 0.15, blue: 0.15)
-        case .resting:
-            Color(red: 0.90, green: 0.50, blue: 0.10)
-        }
-    }
-}
-
 private extension TargetMuscle {
     /// Which drawable body-map regions represent this muscle on a given side.
     /// The path data only has whole-deltoid shapes plus a front-deltoid
@@ -107,8 +93,7 @@ extension Muscle {
 
 private struct MuscleMapPanel: View {
     let side: BodySide
-    let activatedMuscles: Set<TargetMuscle>
-    let restingMuscles: Set<TargetMuscle>
+    let intensities: [TargetMuscle: Double]
     var selectedMuscles: Binding<Set<TargetMuscle>>?
     let isEditable: Bool
 
@@ -117,18 +102,18 @@ private struct MuscleMapPanel: View {
     private var style: BodyViewStyle {
         BodyViewStyle(
             defaultFillColor: defaultFill,
-            strokeColor: themeManager.cardBorder.opacity(0.75),
+            strokeColor: themeManager.cardBorder,
             strokeWidth: 0.55,
-            selectionColor: MuscleDisplayState.active.color,
-            selectionStrokeColor: Color(red: 1.0, green: 0.35, blue: 0.35),
+            selectionColor: .appAccent,
+            selectionStrokeColor: Color.appGradientEnd,
             selectionStrokeWidth: 1.6,
             headColor: Color(
-                light: Color(red: 0.78, green: 0.83, blue: 0.90),
-                dark: Color(red: 0.14, green: 0.24, blue: 0.36)
+                light: Color(red: 0.87, green: 0.84, blue: 0.80),
+                dark: Color(red: 0.26, green: 0.24, blue: 0.21)
             ),
             hairColor: Color(
-                light: Color(red: 0.28, green: 0.32, blue: 0.38),
-                dark: Color(red: 0.05, green: 0.08, blue: 0.11)
+                light: Color(red: 0.35, green: 0.32, blue: 0.29),
+                dark: Color(red: 0.10, green: 0.09, blue: 0.08)
             ),
             shadowColor: .clear,
             shadowRadius: 0,
@@ -138,13 +123,20 @@ private struct MuscleMapPanel: View {
 
     private var defaultFill: Color {
         Color(
-            light: Color(red: 0.80, green: 0.85, blue: 0.92),
-            dark: Color(red: 0.12, green: 0.22, blue: 0.34)
+            light: Color(red: 0.90, green: 0.88, blue: 0.84),
+            dark: Color(red: 0.22, green: 0.20, blue: 0.18)
         )
     }
 
-    private func mapped(_ targets: Set<TargetMuscle>) -> Set<Muscle> {
-        Set(targets.flatMap { $0.mapMuscles(on: side) })
+    /// Per-region intensity: the hottest contributing target muscle wins.
+    private var mappedIntensities: [Muscle: Double] {
+        var result: [Muscle: Double] = [:]
+        for (target, intensity) in intensities where intensity > 0.01 {
+            for muscle in target.mapMuscles(on: side) {
+                result[muscle] = max(result[muscle] ?? 0, intensity)
+            }
+        }
+        return result
     }
 
     var body: some View {
@@ -157,20 +149,19 @@ private struct MuscleMapPanel: View {
             .showSubGroups()
 
         if isEditable, let selectedMuscles {
-            let selected = mapped(selectedMuscles.wrappedValue)
+            let selected = Set(selectedMuscles.wrappedValue.flatMap { $0.mapMuscles(on: side) })
             bodyView = bodyView.selected(selected)
-            bodyView = applySubGroupMasks(to: bodyView, highlighted: selected, active: selected)
+            bodyView = applySubGroupMasks(to: bodyView, highlighted: selected)
         } else {
-            let active = mapped(activatedMuscles)
-            let resting = mapped(restingMuscles).subtracting(active)
-
-            for muscle in resting {
-                bodyView = bodyView.highlight(muscle, color: MuscleDisplayState.resting.color, opacity: 0.82)
+            let mapped = mappedIntensities
+            for (muscle, intensity) in mapped {
+                bodyView = bodyView.highlight(
+                    muscle,
+                    color: Color.heat(intensity),
+                    opacity: 0.55 + 0.4 * intensity
+                )
             }
-            for muscle in active {
-                bodyView = bodyView.highlight(muscle, color: MuscleDisplayState.active.color, opacity: 0.92)
-            }
-            bodyView = applySubGroupMasks(to: bodyView, highlighted: active.union(resting), active: active.union(resting))
+            bodyView = applySubGroupMasks(to: bodyView, highlighted: Set(mapped.keys))
         }
 
         if isEditable {
@@ -197,13 +188,13 @@ private struct MuscleMapPanel: View {
     /// When the whole deltoid is lit but front delts weren't worked (or the
     /// obliques are lit but not the serratus), repaint the sub-shape with the
     /// default fill so it doesn't read as worked.
-    private func applySubGroupMasks(to bodyView: BodyView, highlighted: Set<Muscle>, active: Set<Muscle>) -> BodyView {
+    private func applySubGroupMasks(to bodyView: BodyView, highlighted: Set<Muscle>) -> BodyView {
         var result = bodyView
         if side == .front {
-            if highlighted.contains(.deltoids) && !active.contains(.frontDeltoid) {
+            if highlighted.contains(.deltoids) && !highlighted.contains(.frontDeltoid) {
                 result = result.highlight(.frontDeltoid, color: defaultFill, opacity: 1.0)
             }
-            if highlighted.contains(.obliques) && !active.contains(.serratus) {
+            if highlighted.contains(.obliques) && !highlighted.contains(.serratus) {
                 result = result.highlight(.serratus, color: defaultFill, opacity: 1.0)
             }
         }
@@ -213,12 +204,19 @@ private struct MuscleMapPanel: View {
     @ViewBuilder
     private func tooltipLabel(for muscle: Muscle) -> some View {
         if let target = isEditable ? muscle.editorTarget(on: side) : muscle.targetMuscle(on: side) {
-            Text(target.displayName)
-                .font(.caption2.weight(.semibold))
-                .foregroundColor(themeManager.primaryText)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(.ultraThinMaterial, in: Capsule())
+            VStack(spacing: 2) {
+                Text(target.displayName)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(themeManager.primaryText)
+                if !isEditable {
+                    Text(TrainingEngine.RecoveryStatus.from(fatigue: intensities[target] ?? 0).rawValue)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(themeManager.secondaryText)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
@@ -232,11 +230,14 @@ private struct MuscleMapPanel: View {
     }
 }
 
+/// Front + back body heatmap. In display mode, pass per-muscle intensities
+/// (0 = fresh, 1 = just trained / fully fatigued) and the fill interpolates
+/// along the heat scale. In edit mode, pass a selection binding instead.
 struct MuscleDiagramView: View {
-    let activatedMuscles: Set<TargetMuscle>
-    let restingMuscles: Set<TargetMuscle>
+    var intensities: [TargetMuscle: Double] = [:]
     var selectedMuscles: Binding<Set<TargetMuscle>>?
     var isEditable: Bool = false
+    var showsLegend: Bool = true
 
     @EnvironmentObject var themeManager: ThemeManager
 
@@ -248,24 +249,40 @@ struct MuscleDiagramView: View {
             }
             .padding(.horizontal, 8)
 
+            if showsLegend {
+                legend
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var legend: some View {
+        if isEditable {
             HStack(spacing: 16) {
-                legendItem(
-                    color: MuscleDisplayState.active.color,
-                    label: isEditable ? "Selected" : "Worked Today"
-                )
-                if !isEditable {
-                    legendItem(
-                        color: MuscleDisplayState.resting.color,
-                        label: "Recovering"
-                    )
-                }
+                legendItem(color: .appAccent, label: "Selected")
                 legendItem(
                     color: Color(
-                        light: Color(red: 0.80, green: 0.85, blue: 0.92),
-                        dark: Color(red: 0.12, green: 0.22, blue: 0.34)
+                        light: Color(red: 0.90, green: 0.88, blue: 0.84),
+                        dark: Color(red: 0.22, green: 0.20, blue: 0.18)
                     ),
-                    label: isEditable ? "Not Targeted" : "Rested"
+                    label: "Not Targeted"
                 )
+            }
+            .padding(.top, 4)
+        } else {
+            HStack(spacing: 8) {
+                Text("Fresh")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(themeManager.secondaryText)
+                LinearGradient(
+                    colors: [Color.heat(0.05), Color.heat(0.5), Color.heat(1.0)],
+                    startPoint: .leading, endPoint: .trailing
+                )
+                .frame(width: 110, height: 8)
+                .clipShape(Capsule())
+                Text("Fatigued")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(themeManager.secondaryText)
             }
             .padding(.top, 4)
         }
@@ -280,8 +297,7 @@ struct MuscleDiagramView: View {
 
             MuscleMapPanel(
                 side: side,
-                activatedMuscles: activatedMuscles,
-                restingMuscles: restingMuscles,
+                intensities: intensities,
                 selectedMuscles: selectedMuscles,
                 isEditable: isEditable
             )
@@ -303,11 +319,13 @@ struct MuscleDiagramView: View {
 
 #Preview {
     MuscleDiagramView(
-        activatedMuscles: [.chest, .frontDelts, .triceps, .abs, .serratus],
-        restingMuscles: [.biceps, .lats, .upperBack, .traps],
-        isEditable: false
+        intensities: [
+            .chest: 1.0, .frontDelts: 0.9, .triceps: 0.85,
+            .lats: 0.45, .upperBack: 0.4, .biceps: 0.35,
+            .quads: 0.15, .calves: 0.1
+        ]
     )
     .environmentObject(ThemeManager())
     .padding()
-    .background(Color(red: 0.039, green: 0.078, blue: 0.117))
+    .background(Color.appBackground)
 }

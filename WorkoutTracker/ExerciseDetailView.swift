@@ -1,243 +1,165 @@
 import SwiftUI
-import SwiftData
 import Charts
 
+/// Per-exercise analytics: e1RM trend, bests, and full session history.
 struct ExerciseDetailView: View {
-    @EnvironmentObject var themeManager: ThemeManager
     let exercise: Exercise
+    @EnvironmentObject var themeManager: ThemeManager
 
-    var sortedSessions: [ExerciseSession] {
+    private var sortedSessions: [ExerciseSession] {
+        exercise.sessions.sorted { $0.date > $1.date }
+    }
+
+    private struct ProgressPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let value: Double
+        let location: String
+    }
+
+    private var chartData: [ProgressPoint] {
         exercise.sessions
-            .sorted { $0.date > $1.date }
-    }
-
-    private var chartData: [ExerciseProgressPoint] {
-        sortedSessions.compactMap { session in
-            if exercise.isCardio {
-                guard let runningTime = session.runningTime, runningTime > 0 else {
-                    return nil
+            .sorted { $0.date < $1.date }
+            .compactMap { session in
+                if exercise.isCardio {
+                    guard let time = session.runningTime, time > 0 else { return nil }
+                    return ProgressPoint(date: session.date, value: time, location: session.location.rawValue)
                 }
-
-                return ExerciseProgressPoint(date: session.date, value: runningTime)
+                let e1rm = TrainingEngine.bestOneRepMax(in: session)
+                guard e1rm > 0 else { return nil }
+                return ProgressPoint(date: session.date, value: e1rm, location: session.location.rawValue)
             }
-
-            guard let maxWeight = session.sets.map(\.weight).max(), maxWeight > 0 else {
-                return nil
-            }
-
-            return ExerciseProgressPoint(date: session.date, value: maxWeight)
-        }
-        .sorted { $0.date < $1.date }
-    }
-
-    private var bestValue: Double? {
-        chartData.map(\.value).max()
-    }
-
-    private var bestLabel: String {
-        guard let bestValue else { return "-" }
-        return exercise.isCardio ? String(format: "%.1f min", bestValue) : String(format: "%.1f lb", bestValue)
     }
 
     var body: some View {
-        ZStack {
-            themeManager.background.ignoresSafeArea()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                summaryRow
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    summaryCard
-
-                    if chartData.count > 1 {
-                        chartCard
-                    }
-
-                    sessionHistory
+                if chartData.count >= 2 {
+                    chartCard
                 }
-                .padding()
+
+                sessionHistory
+            }
+            .padding(16)
+        }
+        .background(themeManager.background.ignoresSafeArea())
+        .navigationTitle(exercise.name)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Summary
+
+    private var summaryRow: some View {
+        let best = chartData.map(\.value).max() ?? 0
+        let topWeight = exercise.sessions.flatMap(\.sets).map(\.weight).max() ?? 0
+
+        return HStack(spacing: 12) {
+            StatTile(
+                icon: "number",
+                iconColor: .appCardio,
+                value: "\(exercise.sessions.count)",
+                label: "Sessions"
+            )
+            if exercise.isCardio {
+                StatTile(
+                    icon: "stopwatch.fill",
+                    iconColor: .appAccent,
+                    value: best > 0 ? TrainingEngine.formatWeight(best) : "—",
+                    label: "Longest Run"
+                )
+            } else {
+                StatTile(
+                    icon: "trophy.fill",
+                    iconColor: .appWarning,
+                    value: best > 0 ? TrainingEngine.formatWeight(best) : "—",
+                    label: "Best est. 1RM"
+                )
+                StatTile(
+                    icon: "scalemass.fill",
+                    iconColor: .appAccent,
+                    value: topWeight > 0 ? TrainingEngine.formatWeight(topWeight) : "—",
+                    label: "Top Weight"
+                )
             }
         }
-        .navigationTitle(exercise.name)
-        .preferredColorScheme(themeManager.colorScheme)
     }
 
-    var summaryCard: some View {
-        HStack(spacing: 20) {
-            ExerciseStat(label: "Sessions", value: "\(sortedSessions.count)", themeManager: themeManager)
-            Divider()
-                .background(themeManager.secondaryText.opacity(0.3))
-            ExerciseStat(label: exercise.isCardio ? "Longest Run" : "Best", value: bestLabel, themeManager: themeManager)
-        }
-        .padding()
-        .frame(maxWidth: .infinity)
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
-    }
+    // MARK: - Chart
 
-    var chartCard: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text(exercise.isCardio ? "Run Time Progression" : "Max Weight Progression")
-                .font(.headline)
-                .foregroundColor(themeManager.primaryText)
+    private var chartCard: some View {
+        let locations = Array(Set(chartData.map(\.location))).sorted()
+        let splitByLocation = locations.count > 1
+        let singleColor = locations.first == WorkoutLocation.home.rawValue ? Color.appCardio : Color.appAccent
 
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionKicker(text: exercise.isCardio ? "Run Time" : "Estimated 1RM")
+            // Legacy sessions logged at the other location plot as their own
+            // line — home and gym numbers aren't comparable.
             Chart(chartData) { point in
+                if !splitByLocation {
+                    AreaMark(
+                        x: .value("Date", point.date),
+                        y: .value("Value", point.value)
+                    )
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [singleColor.opacity(0.35), singleColor.opacity(0.02)],
+                            startPoint: .top, endPoint: .bottom
+                        )
+                    )
+                    .interpolationMethod(.catmullRom)
+                }
+
                 LineMark(
                     x: .value("Date", point.date),
-                    y: .value(exercise.isCardio ? "Minutes" : "Weight", point.value)
+                    y: .value("Value", point.value)
                 )
-                .symbol(Circle())
-                .foregroundStyle(Color.appAccent)
+                .foregroundStyle(by: .value("Location", point.location))
+                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .interpolationMethod(.catmullRom)
+
+                PointMark(
+                    x: .value("Date", point.date),
+                    y: .value("Value", point.value)
+                )
+                .foregroundStyle(by: .value("Location", point.location))
+                .symbolSize(30)
             }
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-            .frame(height: 220)
+            .chartForegroundStyleScale(
+                domain: locations,
+                range: locations.map { $0 == WorkoutLocation.home.rawValue ? Color.appCardio : Color.appAccent }
+            )
+            .chartLegend(splitByLocation ? .visible : .hidden)
+            .chartYScale(domain: chartDomain)
+            .frame(height: 180)
         }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
+        .padding(16)
+        .appCard()
     }
 
-    var sessionHistory: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Session History")
-                .font(.headline)
-                .foregroundColor(themeManager.primaryText)
-
-            if sortedSessions.isEmpty {
-                Text("No sessions logged yet.")
-                    .foregroundColor(themeManager.secondaryText)
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(themeManager.cardBackground)
-                    .cornerRadius(12)
-            } else {
-                ForEach(sortedSessions) { session in
-                    ExerciseSessionSummaryCard(session: session, themeManager: themeManager)
-                }
-            }
-        }
-    }
-}
-
-private struct ExerciseProgressPoint: Identifiable {
-    let id = UUID()
-    let date: Date
-    let value: Double
-}
-
-private struct ExerciseStat: View {
-    let label: String
-    let value: String
-    let themeManager: ThemeManager
-
-    var body: some View {
-        VStack(spacing: 6) {
-            Text(value)
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(themeManager.primaryText)
-            Text(label)
-                .font(.caption)
-                .foregroundColor(themeManager.secondaryText)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct ExerciseSessionSummaryCard: View {
-    let session: ExerciseSession
-    let themeManager: ThemeManager
-
-    var sortedSets: [LoggedSet] {
-        session.sets.sorted { $0.setNumber < $1.setNumber }
+    private var chartDomain: ClosedRange<Double> {
+        let values = chartData.map(\.value)
+        let minValue = values.min() ?? 0
+        let maxValue = values.max() ?? 1
+        let padding = max((maxValue - minValue) * 0.15, 5)
+        return max(0, minValue - padding)...(maxValue + padding)
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.headline)
-                        .foregroundColor(themeManager.primaryText)
-                    Text(session.location.rawValue)
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                }
+    // MARK: - History
 
-                Spacer()
-
-                if session.exercise?.isCardio == true, let runTime = session.runningTime {
-                    Text("\(runTime, specifier: "%.1f") min")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color.appAccent)
-                } else if let maxWeight = sortedSets.map(\.weight).max() {
-                    Text("\(maxWeight, specifier: "%.1f") lb max")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                        .foregroundColor(Color.appAccent)
+    private var sessionHistory: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionKicker(text: "History")
+            ForEach(sortedSessions, id: \.persistentModelID) { session in
+                NavigationLink {
+                    SessionDetailView(session: session)
+                } label: {
+                    SessionCard(session: session)
                 }
-            }
-
-            if session.exercise?.isCardio == true {
-                HStack {
-                    if let warmUpTime = session.warmUpTime {
-                        MetricPill(label: "Warm-up", value: String(format: "%.1f min", warmUpTime), themeManager: themeManager)
-                    }
-                    if let runningSpeed = session.runningSpeed {
-                        MetricPill(label: "Speed", value: String(format: "%.1f", runningSpeed), themeManager: themeManager)
-                    }
-                    if let intensityRating = session.intensityRating {
-                        MetricPill(label: "Intensity", value: "\(intensityRating)/10", themeManager: themeManager)
-                    }
-                }
-            } else if !session.machineSettings.isEmpty {
-                Label(session.machineSettings, systemImage: "gearshape.fill")
-                    .font(.caption)
-                    .foregroundColor(themeManager.secondaryText)
-            }
-
-            if session.exercise?.isCardio != true {
-                ForEach(sortedSets) { set in
-                    HStack {
-                        Text("Set \(set.setNumber)")
-                            .fontWeight(.semibold)
-                            .foregroundColor(themeManager.secondaryText)
-                        Spacer()
-                        Text("\(set.reps) reps")
-                            .foregroundColor(themeManager.primaryText)
-                        Text("\(set.weight, specifier: "%.1f") lb")
-                            .fontWeight(.semibold)
-                            .foregroundColor(themeManager.primaryText)
-                    }
-                    .font(.subheadline)
-                }
+                .buttonStyle(.plain)
             }
         }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(12)
-    }
-}
-
-private struct MetricPill: View {
-    let label: String
-    let value: String
-    let themeManager: ThemeManager
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption2)
-                .foregroundColor(themeManager.secondaryText)
-            Text(value)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundColor(themeManager.primaryText)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(themeManager.secondaryBackground)
-        .cornerRadius(8)
     }
 }

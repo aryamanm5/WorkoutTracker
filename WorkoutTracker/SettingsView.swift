@@ -3,286 +3,324 @@ import SwiftData
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
-    @Query(sort: \Exercise.name) var exercises: [Exercise]
-    @Query(sort: \ExerciseSession.date) var allSessions: [ExerciseSession]
-    @Query var workoutDays: [WorkoutDay]
-    @Query(sort: \BodyWeightEntry.date) var weightEntries: [BodyWeightEntry]
-    
-    @State private var showingAddExercise = false
-    @State private var newExerciseName = ""
-    @State private var newExerciseType: WorkoutType = .push
-    @State private var isCardioExercise = false
-    
-    @State private var showingAddHistoricalWorkout = false
+    @EnvironmentObject var themeManager: ThemeManager
+
+    @Query(sort: \BodyWeightEntry.date, order: .reverse) private var weightEntries: [BodyWeightEntry]
+
+    @AppStorage("restTargetSeconds") private var restTarget: Int = 90
+    @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
+    @AppStorage("progressPhotosEnabled") private var progressPhotosEnabled = true
+    @AppStorage("progressPhotosLockEnabled") private var progressPhotosLockEnabled = false
+    @AppStorage("progressPhotosPasswordHash") private var progressPhotosPasswordHash = ""
+
     @State private var exportURL: URL?
-    @State private var showingCSVImporter = false
+    @State private var showingImporter = false
     @State private var importMessage: String?
 
-    @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
-    
+    @State private var showingSetPassword = false
+    @State private var showingRemovePassword = false
+    @State private var showingWrongPassword = false
+    @State private var passwordEntry = ""
+
+    private let restOptions = [60, 90, 120, 180]
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                themeManager.background.ignoresSafeArea()
-                
-                List {
-                    // Appearance Section
-                    Section {
-                        Picker(selection: $themeManager.appearance) {
-                            ForEach(AppAppearance.allCases) { appearance in
-                                Text(appearance.rawValue).tag(appearance)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "circle.lefthalf.filled")
-                                    .foregroundColor(Color.appAccent)
-                                Text("Theme")
-                                    .foregroundColor(themeManager.primaryText)
-                            }
-                        }
-
-                        Picker(selection: $themeManager.selectedFont) {
-                            ForEach(AppFontChoice.allCases) { fontChoice in
-                                Text(fontChoice.rawValue).tag(fontChoice)
-                            }
-                        } label: {
-                            HStack {
-                                Image(systemName: "textformat")
-                                    .foregroundColor(Color.appAccent)
-                                Text("Font")
-                                    .foregroundColor(themeManager.primaryText)
-                            }
-                        }
-                    } header: {
-                        Text("Appearance")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-
-                    // Plate Math Section
-                    Section {
-                        HStack {
-                            Text("Leg Press Sled Weight")
-                                .foregroundColor(themeManager.primaryText)
-                            Spacer()
-                            TextField("167", value: $legPressSledWeight, format: .number)
-                                .keyboardType(.decimalPad)
-                                .multilineTextAlignment(.trailing)
-                                .frame(width: 80)
-                                .foregroundColor(themeManager.primaryText)
-                            Text("lbs")
-                                .foregroundColor(themeManager.secondaryText)
-                        }
-                    } header: {
-                        Text("Plate Math")
-                            .foregroundColor(themeManager.secondaryText)
-                    } footer: {
-                        Text("Starting weight of your gym's leg press sled, used by the plate calculator.")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    // Manage Exercises Section
-                    Section {
-                        ForEach(WorkoutType.allCases.filter { $0 != .rest }, id: \.self) { type in
-                            let filteredExercises = exercises.filter { $0.type == type }
-                            
-                            DisclosureGroup {
-                                ForEach(filteredExercises) { exercise in
-                                    NavigationLink {
-                                        ExerciseMuscleEditorView(exercise: exercise)
-                                            .environmentObject(themeManager)
-                                    } label: {
-                                        HStack {
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(exercise.name)
-                                                    .foregroundColor(themeManager.primaryText)
-                                                Text(exercise.targetMuscles.map(\.displayName).sorted().joined(separator: ", "))
-                                                    .font(.caption)
-                                                    .foregroundColor(themeManager.secondaryText)
-                                                    .lineLimit(1)
-                                            }
-
-                                            if exercise.isCardio {
-                                                Spacer()
-                                                Image(systemName: "figure.run").foregroundColor(.orange)
-                                            }
-                                        }
-                                    }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button(role: .destructive) {
-                                            deleteExercise(exercise)
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Text("\(type.rawValue) Exercises (\(filteredExercises.count))")
-                                    .foregroundColor(themeManager.primaryText)
-                            }
-                        }
-                    } header: {
-                        Text("Manage Exercises")
-                            .foregroundColor(themeManager.secondaryText)
-                    } footer: {
-                        Text("Swipe left on an exercise to delete")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    Section {
-                        Button(action: { showingAddExercise = true }) {
-                            Label("Add New Exercise", systemImage: "plus.circle.fill")
-                                .foregroundColor(Color.appAccent)
-                        }
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    // Historical Data Section
-                    Section {
-                        Button(action: { showingAddHistoricalWorkout = true }) {
-                            Label("Add Historical Workout", systemImage: "clock.arrow.circlepath")
-                                .foregroundColor(Color.appAccent)
-                        }
-                    } header: {
-                        Text("Historical Data")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    Section {
-                        Button(action: exportToCSV) {
-                            Label("Export Data to CSV", systemImage: "square.and.arrow.up")
-                                .foregroundColor(Color.appAccent)
-                        }
-
-                        Button(action: { showingCSVImporter = true }) {
-                            Label("Import Data from CSV", systemImage: "square.and.arrow.down")
-                                .foregroundColor(Color.appAccent)
-                        }
-                    } header: {
-                        Text("Data Management")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    // Legend Section
-                    Section {
-                        HStack(spacing: 20) {
-                            LegendItem(color: .workoutDot, label: "Workout", themeManager: themeManager)
-                            LegendItem(color: .cardioDot, label: "Cardio", themeManager: themeManager)
-                            LegendItem(color: .creatineDot, label: "Creatine", themeManager: themeManager)
-                        }
-                        .padding(.vertical, 5)
-                    } header: {
-                        Text("Calendar Legend")
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    trainingCard
+                    appearanceCard
+                    privacyCard
+                    libraryCard
+                    dataCard
                 }
-                .scrollContentBackground(.hidden)
-                .listStyle(.insetGrouped)
+                .padding(16)
+                .padding(.bottom, 24)
             }
+            .background(themeManager.background.ignoresSafeArea())
             .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
             .dismissableKeyboard()
-            .sheet(isPresented: $showingAddExercise) {
-                addExerciseSheet
-                    .fontDesign(themeManager.selectedFont.design)
-            }
-            .sheet(isPresented: $showingAddHistoricalWorkout) {
-                AddHistoricalWorkoutView()
-                    .environmentObject(themeManager)
-            }
             .sheet(item: $exportURL) { url in
-                ShareSheet(activityItems: [url])
+                ShareSheet(items: [url])
             }
             .fileImporter(
-                isPresented: $showingCSVImporter,
+                isPresented: $showingImporter,
                 allowedContentTypes: [.commaSeparatedText, .plainText],
                 allowsMultipleSelection: false
             ) { result in
                 importCSV(from: result)
             }
-            .alert("CSV Import", isPresented: Binding(
-                get: { importMessage != nil },
-                set: { if !$0 { importMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) {}
+            .alert(
+                "CSV Import",
+                isPresented: Binding(
+                    get: { importMessage != nil },
+                    set: { if !$0 { importMessage = nil } }
+                )
+            ) {
+                Button("OK") { importMessage = nil }
             } message: {
                 Text(importMessage ?? "")
             }
-            .preferredColorScheme(themeManager.colorScheme)
         }
     }
-    
-    var addExerciseSheet: some View {
-        NavigationStack {
-            ZStack {
-                themeManager.background.ignoresSafeArea()
-                
-                Form {
-                    Section {
-                        TextField("Exercise Name", text: $newExerciseName)
-                            .foregroundColor(themeManager.primaryText)
+
+    // MARK: - Training
+
+    private var trainingCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionKicker(text: "Training")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Rest timer")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.primaryText)
+                Picker("Rest timer", selection: $restTarget) {
+                    ForEach(restOptions, id: \.self) { seconds in
+                        Text("\(seconds)s").tag(seconds)
                     }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    Section {
-                        Picker("Workout Type", selection: $newExerciseType) {
-                            Text("Push").tag(WorkoutType.push)
-                            Text("Pull").tag(WorkoutType.pull)
-                            Text("Legs").tag(WorkoutType.legs)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
-                    
-                    Section {
-                        Toggle("Is this a Cardio Exercise?", isOn: $isCardioExercise)
-                            .foregroundColor(themeManager.primaryText)
-                            .tint(Color.appAccent)
-                    }
-                    .listRowBackground(themeManager.cardBackground)
                 }
-                .scrollContentBackground(.hidden)
+                .pickerStyle(.segmented)
+                Text("Countdown between sets during a live session.")
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
             }
-            .navigationTitle("New Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { showingAddExercise = false }
+
+            Divider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Leg press sled")
+                        .appBodyStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text("Starting weight for plate math")
+                        .appCaptionStyle()
                         .foregroundColor(themeManager.secondaryText)
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        addExercise()
+                Spacer()
+                TextField("167", value: $legPressSledWeight, format: .number)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                    .appInputStyle()
+                Text("lb")
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    // MARK: - Appearance
+
+    private var appearanceCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionKicker(text: "Appearance")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Theme")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.primaryText)
+                Picker("Theme", selection: $themeManager.appearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.rawValue).tag(appearance)
                     }
-                    .disabled(newExerciseName.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .foregroundColor(newExerciseName.trimmingCharacters(in: .whitespaces).isEmpty ? themeManager.secondaryText : Color.appAccent)
+                }
+                .pickerStyle(.segmented)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Font")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.primaryText)
+                Picker("Font", selection: $themeManager.selectedFont) {
+                    ForEach(AppFontChoice.allCases) { font in
+                        Text(font.rawValue).tag(font)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    // MARK: - Privacy
+
+    private var privacyCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionKicker(text: "Progress Photos")
+
+            Toggle(isOn: $progressPhotosEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Progress photos")
+                        .appBodyStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text("Show the photo timeline on the Body tab")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
                 }
             }
-            .preferredColorScheme(themeManager.colorScheme)
+            .tint(.appAccent)
+
+            if progressPhotosEnabled {
+                Divider()
+
+                Toggle(isOn: lockToggleBinding) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Lock behind password")
+                            .appBodyStyle()
+                            .foregroundColor(themeManager.primaryText)
+                        Text(progressPhotosLockEnabled
+                             ? "Photos stay hidden until you enter it"
+                             : "Keep photos out of sight when someone borrows your phone")
+                            .appCaptionStyle()
+                            .foregroundColor(themeManager.secondaryText)
+                    }
+                }
+                .tint(.appAccent)
+            }
         }
-        .presentationDetents([.medium])
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+        .alert("Set Photo Password", isPresented: $showingSetPassword) {
+            SecureField("Password", text: $passwordEntry)
+            Button("Set Password") {
+                let trimmed = passwordEntry.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty {
+                    progressPhotosPasswordHash = PasscodeHasher.hash(trimmed)
+                    progressPhotosLockEnabled = true
+                }
+                passwordEntry = ""
+            }
+            Button("Cancel", role: .cancel) { passwordEntry = "" }
+        } message: {
+            Text("You'll need this password to see your progress photos or turn the lock off. There is no recovery if you forget it.")
+        }
+        .alert("Enter Password to Remove Lock", isPresented: $showingRemovePassword) {
+            SecureField("Password", text: $passwordEntry)
+            Button("Remove Lock", role: .destructive) {
+                if PasscodeHasher.hash(passwordEntry.trimmingCharacters(in: .whitespaces)) == progressPhotosPasswordHash {
+                    progressPhotosLockEnabled = false
+                    progressPhotosPasswordHash = ""
+                } else {
+                    showingWrongPassword = true
+                }
+                passwordEntry = ""
+            }
+            Button("Cancel", role: .cancel) { passwordEntry = "" }
+        }
+        .alert("Wrong Password", isPresented: $showingWrongPassword) {
+            Button("OK") {}
+        } message: {
+            Text("The photo lock stays on.")
+        }
     }
-    
-    private func addExercise() {
-        let exercise = Exercise(name: newExerciseName.trimmingCharacters(in: .whitespaces), type: newExerciseType, isCardio: isCardioExercise)
-        context.insert(exercise)
-        try? context.save()
-        newExerciseName = ""
-        isCardioExercise = false
-        showingAddExercise = false
+
+    /// Turning the lock on routes through set-a-password; turning it off
+    /// requires the current password first.
+    private var lockToggleBinding: Binding<Bool> {
+        Binding(
+            get: { progressPhotosLockEnabled },
+            set: { wantsOn in
+                if wantsOn {
+                    showingSetPassword = true
+                } else {
+                    showingRemovePassword = true
+                }
+            }
+        )
     }
-    
-    private func deleteExercise(_ exercise: Exercise) {
-        context.delete(exercise)
-        try? context.save()
+
+    // MARK: - Library
+
+    private var libraryCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionKicker(text: "Library")
+                .padding(.bottom, 8)
+
+            NavigationLink {
+                ManageExercisesView()
+            } label: {
+                settingsRow(icon: "dumbbell.fill", color: .appAccent,
+                            title: "Manage Exercises",
+                            subtitle: "Add, remove, and edit muscle targets")
+            }
+            Divider()
+            NavigationLink {
+                AddHistoricalWorkoutView()
+            } label: {
+                settingsRow(icon: "clock.arrow.circlepath", color: .appCardio,
+                            title: "Log Past Workout",
+                            subtitle: "Back-date a session you forgot to track")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
     }
-    
+
+    // MARK: - Data
+
+    private var dataCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionKicker(text: "Data")
+                .padding(.bottom, 8)
+
+            Button {
+                exportToCSV()
+            } label: {
+                settingsRow(icon: "square.and.arrow.up", color: .appSuccess,
+                            title: "Export CSV",
+                            subtitle: "All workouts and body weight history")
+            }
+            Divider()
+            Button {
+                showingImporter = true
+            } label: {
+                settingsRow(icon: "square.and.arrow.down", color: .appWarning,
+                            title: "Import CSV",
+                            subtitle: "Duplicates are skipped automatically")
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    private func settingsRow(icon: String, color: Color, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(color)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .appBodyStyle()
+                    .fontWeight(.semibold)
+                    .foregroundColor(themeManager.primaryText)
+                Text(subtitle)
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(themeManager.secondaryText)
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - CSV export
+
     private func exportToCSV() {
         var csvString = "Date,Exercise,Type,IsCardio,Location,SetNumber,Reps,Weight(lbs),Difficulty,RestTime(s),SetNotes,MachineSettings,WarmUp(min),Run(min),CoolDown(min),Speed,Intensity,SessionNotes\n"
 
@@ -297,7 +335,6 @@ struct SettingsView: View {
         guard let sessions = try? context.fetch(descriptor) else { return }
 
         for session in sessions {
-            // Access exercise — triggers fault resolution on this context
             guard let exercise = session.exercise else { continue }
 
             let dateStr = formatter.string(from: session.date)
@@ -320,7 +357,6 @@ struct SettingsView: View {
                 let sortedSets = session.sets.sorted { $0.setNumber < $1.setNumber }
 
                 if sortedSets.isEmpty {
-                    // Session exists but no sets logged
                     csvString.append("\(dateStr),\(exName),\(exType),\(isCardio),\(location),,,,,,,\(settings),,,,,,\(sessionNotes)\n")
                 } else {
                     for set in sortedSets {
@@ -332,7 +368,6 @@ struct SettingsView: View {
             }
         }
 
-        // Body weight entries
         if !weightEntries.isEmpty {
             csvString.append("\n\nBody Weight History\nDate,Weight(lbs),Notes\n")
             let fileFormatter = DateFormatter()
@@ -344,7 +379,6 @@ struct SettingsView: View {
             }
         }
 
-        // Write file
         let fileFormatter = DateFormatter()
         fileFormatter.dateFormat = "yyyy-MM-dd"
         let fileName = "WorkoutData_\(fileFormatter.string(from: Date())).csv"
@@ -352,24 +386,13 @@ struct SettingsView: View {
         do {
             let fileURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent(fileName)
-
-            try csvString.write(
-                to: fileURL,
-                atomically: true,
-                encoding: .utf8
-            )
-
-            print("CSV CREATED:")
-            print(fileURL)
-
+            try csvString.write(to: fileURL, atomically: true, encoding: .utf8)
             exportURL = fileURL
-
         } catch {
-            print("EXPORT ERROR:")
-            print(error)
+            importMessage = "Export failed: \(error.localizedDescription)"
         }
     }
-    
+
     private func escapeCSV(_ string: String) -> String {
         var result = string.replacingOccurrences(of: "\"", with: "\"\"")
         if result.contains(",") || result.contains("\n") || result.contains("\"") {
@@ -377,6 +400,8 @@ struct SettingsView: View {
         }
         return result
     }
+
+    // MARK: - CSV import
 
     private func importCSV(from result: Result<[URL], Error>) {
         do {
@@ -420,7 +445,7 @@ struct SettingsView: View {
 
         if let storedExercises = try? context.fetch(FetchDescriptor<Exercise>()) {
             for exercise in storedExercises {
-                exerciseCache[exercise.name.lowercased()] = exercise
+                exerciseCache["\(exercise.name.lowercased())|\(exercise.location.rawValue)"] = exercise
                 for session in exercise.sessions {
                     existingSessionKeys.insert(sessionDedupKey(exerciseName: exercise.name, date: session.date))
                 }
@@ -453,8 +478,6 @@ struct SettingsView: View {
                         continue
                     }
 
-                    // A session for this exercise at this exact time already
-                    // exists in the app — skip the row instead of duplicating.
                     if existingSessionKeys.contains(sessionDedupKey(exerciseName: exerciseName, date: date)) {
                         duplicatesSkipped += 1
                         index += 1
@@ -463,9 +486,9 @@ struct SettingsView: View {
 
                     let workoutType = WorkoutType(rawValue: typeText) ?? .push
                     let isCardio = value(in: workoutRow, header: header, column: "IsCardio") == "Yes"
-                    let exercise = findOrCreateExercise(named: exerciseName, type: workoutType, isCardio: isCardio, cache: &exerciseCache)
-                    let locationText = value(in: workoutRow, header: header, column: "Location") ?? WorkoutLocation.planetFitness.rawValue
-                    let location = WorkoutLocation(rawValue: locationText) ?? .planetFitness
+                    let locationText = value(in: workoutRow, header: header, column: "Location") ?? WorkoutLocation.gym.rawValue
+                    let location = WorkoutLocation.from(stored: locationText)
+                    let exercise = findOrCreateExercise(named: exerciseName, type: workoutType, isCardio: isCardio, location: location, cache: &exerciseCache)
                     let machineSettings = value(in: workoutRow, header: header, column: "MachineSettings") ?? ""
                     let sessionNotes = value(in: workoutRow, header: header, column: "SessionNotes") ?? ""
                     let sessionKey = "\(date.timeIntervalSince1970)-\(exerciseName.lowercased())-\(machineSettings)-\(sessionNotes)"
@@ -552,16 +575,19 @@ struct SettingsView: View {
         "\(exerciseName.lowercased())|\(date.timeIntervalSince1970)"
     }
 
-    private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool, cache: inout [String: Exercise]) -> Exercise {
-        if let existing = cache[name.lowercased()] {
+    private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool, location: WorkoutLocation, cache: inout [String: Exercise]) -> Exercise {
+        // Home and gym libraries are separate, so the same name can exist
+        // once per location.
+        let key = "\(name.lowercased())|\(location.rawValue)"
+        if let existing = cache[key] {
             existing.isCardio = isCardio
             existing.type = type
             return existing
         }
 
-        let exercise = Exercise(name: name, type: type, isCardio: isCardio)
+        let exercise = Exercise(name: name, type: type, isCardio: isCardio, location: location)
         context.insert(exercise)
-        cache[name.lowercased()] = exercise
+        cache[key] = exercise
         return exercise
     }
 
@@ -638,503 +664,468 @@ struct SettingsView: View {
     }
 }
 
-struct ExerciseMuscleEditorView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
+// MARK: - Manage exercises
 
-    let exercise: Exercise
-    @State private var selectedMuscles: Set<TargetMuscle> = []
+struct ManageExercisesView: View {
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject var themeManager: ThemeManager
+    @Query(sort: \Exercise.name) private var exercises: [Exercise]
+
+    @State private var showingAdd = false
+    @State private var newName = ""
+    @State private var newType: WorkoutType = .push
+    @State private var newIsCardio = false
+    @State private var newLocation: WorkoutLocation = .gym
+    @State private var exerciseToDelete: Exercise?
 
     var body: some View {
-        ZStack {
-            themeManager.background.ignoresSafeArea()
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(exercise.name)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(WorkoutLocation.allCases) { location in
+                    let atLocation = exercises.filter { $0.location == location }
+                    if !atLocation.isEmpty {
+                        Label(location.rawValue, systemImage: location.icon)
                             .appHeadingStyle()
                             .foregroundColor(themeManager.primaryText)
-                        Text("Tap muscles on the diagram to define what this exercise targets.")
-                            .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .padding(.top, 4)
                     }
-
-                    MuscleDiagramView(
-                        activatedMuscles: selectedMuscles,
-                        restingMuscles: [],
-                        selectedMuscles: $selectedMuscles,
-                        isEditable: true
-                    )
-                    .environmentObject(themeManager)
-                    .padding()
-                    .appCard()
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("Target Muscles")
-                            .font(.headline)
-                            .foregroundColor(themeManager.primaryText)
-                        Text("Tap to toggle. Some muscles (like lats or cardio) can only be selected here.")
-                            .font(.caption)
-                            .foregroundColor(themeManager.secondaryText)
-
-                        FlexibleMuscleTagView(selectedMuscles: $selectedMuscles, themeManager: themeManager)
-                    }
-                    .padding()
-                    .appCard()
-
-                    Button(action: saveTargets) {
-                        Text("Save Muscle Targets")
-                            .font(.headline)
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(Color.appAccent)
-                            .cornerRadius(14)
+                    ForEach([WorkoutType.push, .pull, .legs], id: \.self) { type in
+                        let group = atLocation.filter { $0.type == type }
+                        if !group.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                SectionKicker(text: "\(type.rawValue) · \(group.count)")
+                                    .padding(.bottom, 8)
+                                ForEach(group, id: \.persistentModelID) { exercise in
+                                    NavigationLink {
+                                        ExerciseMuscleEditorView(exercise: exercise)
+                                    } label: {
+                                        exerciseRow(exercise)
+                                    }
+                                    .contextMenu {
+                                        Button(role: .destructive) {
+                                            exerciseToDelete = exercise
+                                        } label: {
+                                            Label("Delete Exercise", systemImage: "trash")
+                                        }
+                                    }
+                                    if exercise.persistentModelID != group.last?.persistentModelID {
+                                        Divider()
+                                    }
+                                }
+                            }
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .appCard()
+                        }
                     }
                 }
-                .padding()
+            }
+            .padding(16)
+        }
+        .background(themeManager.background.ignoresSafeArea())
+        .navigationTitle("Exercises")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingAdd = true
+                } label: {
+                    Image(systemName: "plus")
+                }
             }
         }
-        .navigationTitle("Muscle Targets")
-        .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            selectedMuscles = exercise.targetMuscles
+        .sheet(isPresented: $showingAdd) {
+            addSheet
+                .themedPresentation()
+                .presentationDetents([.medium])
         }
-        .preferredColorScheme(themeManager.colorScheme)
+        .confirmationDialog(
+            "Delete \(exerciseToDelete?.name ?? "exercise")?",
+            isPresented: Binding(
+                get: { exerciseToDelete != nil },
+                set: { if !$0 { exerciseToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let exercise = exerciseToDelete {
+                    context.delete(exercise)
+                    try? context.save()
+                }
+                exerciseToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { exerciseToDelete = nil }
+        } message: {
+            Text("This also deletes all its logged history.")
+        }
     }
 
-    private func saveTargets() {
-        exercise.targetMuscles = selectedMuscles
+    private func exerciseRow(_ exercise: Exercise) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: exercise.isCardio ? "figure.run" : "dumbbell.fill")
+                .font(.system(size: 14))
+                .foregroundColor(.appAccent)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(exercise.name)
+                    .appBodyStyle()
+                    .fontWeight(.semibold)
+                    .foregroundColor(themeManager.primaryText)
+                Text(exercise.targetMuscles.map(\.displayName).sorted().joined(separator: ", "))
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(themeManager.secondaryText)
+        }
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+
+    private var addSheet: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                TextField("Exercise name", text: $newName)
+                    .appInputStyle()
+
+                Picker("Day", selection: $newType) {
+                    ForEach([WorkoutType.push, .pull, .legs], id: \.self) { type in
+                        Text(type.rawValue).tag(type)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Location", selection: $newLocation) {
+                    ForEach(WorkoutLocation.allCases) { loc in
+                        Text(loc.rawValue).tag(loc)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Toggle("Cardio exercise", isOn: $newIsCardio)
+                    .tint(.appAccent)
+                    .padding(12)
+                    .background(themeManager.inputBackground)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                Button("Add Exercise") {
+                    let trimmed = newName.trimmingCharacters(in: .whitespaces)
+                    guard !trimmed.isEmpty else { return }
+                    context.insert(Exercise(name: trimmed, type: newType, isCardio: newIsCardio, location: newLocation))
+                    try? context.save()
+                    newName = ""
+                    newIsCardio = false
+                    showingAdd = false
+                }
+                .buttonStyle(EmberButtonStyle())
+                .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                Spacer()
+            }
+            .padding(20)
+            .background(themeManager.background.ignoresSafeArea())
+            .navigationTitle("New Exercise")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingAdd = false }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Muscle target editor
+
+struct ExerciseMuscleEditorView: View {
+    let exercise: Exercise
+
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject var themeManager: ThemeManager
+
+    @State private var selection: Set<TargetMuscle> = []
+    @State private var loaded = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionKicker(text: "Tap Muscles on the Body")
+                    MuscleDiagramView(
+                        selectedMuscles: $selection,
+                        isEditable: true
+                    )
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity)
+                .appCard()
+
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionKicker(text: "Or Toggle Tags")
+                    let columns = [GridItem(.adaptive(minimum: 104), spacing: 8)]
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 8) {
+                        ForEach(TargetMuscle.allCases) { muscle in
+                            let isOn = selection.contains(muscle)
+                            Button {
+                                if isOn {
+                                    selection.remove(muscle)
+                                } else {
+                                    selection.insert(muscle)
+                                }
+                            } label: {
+                                Text(muscle.displayName)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(isOn ? .white : themeManager.primaryText)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 8)
+                                    .background(isOn ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
+                                    .clipShape(Capsule())
+                            }
+                        }
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard()
+            }
+            .padding(16)
+        }
+        .background(themeManager.background.ignoresSafeArea())
+        .navigationTitle(exercise.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            guard !loaded else { return }
+            selection = exercise.targetMuscles
+            loaded = true
+        }
+        .onDisappear {
+            exercise.targetMuscles = selection
+            try? context.save()
+        }
+    }
+}
+
+// MARK: - Historical workout
+
+struct AddHistoricalWorkoutView: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var themeManager: ThemeManager
+    @Query(sort: \Exercise.name) private var exercises: [Exercise]
+
+    @State private var date = Date()
+    @State private var selectedExercise: Exercise?
+    @State private var location: WorkoutLocation = .gym
+    @State private var notes = ""
+
+    struct HistoricalSet: Identifiable {
+        let id = UUID()
+        var reps = 8
+        var weight: Double? = nil
+        var difficulty = 3
+    }
+    @State private var sets: [HistoricalSet] = [HistoricalSet()]
+
+    // Cardio
+    @State private var warmUpTime = ""
+    @State private var runningTime = ""
+    @State private var coolDownTime = ""
+    @State private var runningSpeed = ""
+    @State private var intensity = 5.0
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionKicker(text: "When & What")
+
+                    DatePicker("Date", selection: $date, in: ...Date())
+                        .tint(.appAccent)
+                        .foregroundColor(themeManager.primaryText)
+
+                    HStack {
+                        Text("Exercise")
+                            .appBodyStyle()
+                            .foregroundColor(themeManager.primaryText)
+                        Spacer()
+                        Menu {
+                            ForEach(WorkoutLocation.allCases) { loc in
+                                Section(loc.rawValue) {
+                                    ForEach(exercises.filter { $0.location == loc }, id: \.persistentModelID) { exercise in
+                                        Button(exercise.name) {
+                                            selectedExercise = exercise
+                                            location = exercise.location
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(selectedExercise?.name ?? "Choose")
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.system(size: 10, weight: .bold))
+                            }
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.appAccent)
+                        }
+                    }
+
+                    if let selected = selectedExercise {
+                        ChipLabel(text: selected.location.rawValue, color: .appCardio)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .appCard()
+
+                if selectedExercise?.isCardio == true {
+                    cardioCard
+                } else if selectedExercise != nil {
+                    setsCard
+                }
+
+                if selectedExercise != nil {
+                    TextField("Session notes (optional)", text: $notes, axis: .vertical)
+                        .lineLimit(2...4)
+                        .appInputStyle()
+
+                    Button("Save Workout") { save() }
+                        .buttonStyle(EmberButtonStyle())
+                }
+            }
+            .padding(16)
+        }
+        .background(themeManager.background.ignoresSafeArea())
+        .navigationTitle("Log Past Workout")
+        .navigationBarTitleDisplayMode(.inline)
+        .dismissableKeyboard()
+    }
+
+    private var setsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionKicker(text: "Sets")
+            ForEach($sets) { $set in
+                HStack(spacing: 10) {
+                    Stepper(value: $set.reps, in: 1...50) {
+                        Text("\(set.reps) reps")
+                            .appBodyStyle()
+                            .foregroundColor(themeManager.primaryText)
+                    }
+                    .fixedSize()
+                    TextField("lb", value: $set.weight, format: .number)
+                        .keyboardType(.decimalPad)
+                        .frame(width: 64)
+                        .appInputStyle()
+                    DifficultyDots(rating: set.difficulty, size: 12, interactive: true) { tapped in
+                        set.difficulty = tapped
+                    }
+                }
+            }
+            HStack {
+                Button {
+                    sets.append(HistoricalSet(weight: sets.last?.weight))
+                } label: {
+                    Label("Add Set", systemImage: "plus.circle.fill")
+                }
+                .buttonStyle(QuietButtonStyle())
+                if sets.count > 1 {
+                    Button {
+                        sets.removeLast()
+                    } label: {
+                        Label("Remove", systemImage: "minus.circle")
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    private var cardioCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionKicker(text: "Cardio")
+            HStack(spacing: 10) {
+                historicalField("Warm-up", text: $warmUpTime)
+                historicalField("Run", text: $runningTime)
+                historicalField("Cool-down", text: $coolDownTime)
+            }
+            historicalField("Speed (mph)", text: $runningSpeed)
+            HStack {
+                Text("Intensity")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.secondaryText)
+                Slider(value: $intensity, in: 1...10, step: 1)
+                    .tint(.appAccent)
+                Text("\(Int(intensity))/10")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(.appAccent)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    private func historicalField(_ label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .appCaptionStyle()
+                .foregroundColor(themeManager.secondaryText)
+            TextField("0", text: text)
+                .keyboardType(.decimalPad)
+                .appInputStyle()
+        }
+    }
+
+    private func save() {
+        guard let exercise = selectedExercise else { return }
+
+        let isCardio = exercise.isCardio
+        let session = ExerciseSession(
+            date: date,
+            machineSettings: "",
+            totalSets: isCardio ? 0 : sets.count,
+            notes: notes,
+            location: location,
+            warmUpTime: isCardio ? Double(warmUpTime) : nil,
+            runningTime: isCardio ? Double(runningTime) : nil,
+            coolDownTime: isCardio ? Double(coolDownTime) : nil,
+            runningSpeed: isCardio ? Double(runningSpeed) : nil,
+            intensityRating: isCardio ? Int(intensity) : nil
+        )
+        context.insert(session)
+        session.exercise = exercise
+
+        if !isCardio {
+            for (index, historical) in sets.enumerated() {
+                let set = LoggedSet(
+                    setNumber: index + 1,
+                    reps: historical.reps,
+                    weight: historical.weight ?? 0,
+                    difficulty: historical.difficulty
+                )
+                context.insert(set)
+                set.session = session
+            }
+        }
+
         try? context.save()
         dismiss()
     }
 }
 
-struct FlexibleMuscleTagView: View {
-    @Binding var selectedMuscles: Set<TargetMuscle>
-    let themeManager: ThemeManager
-
-    var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 8)], spacing: 8) {
-            ForEach(TargetMuscle.allCases.sorted { $0.displayName < $1.displayName }) { muscle in
-                let isSelected = selectedMuscles.contains(muscle)
-                Button {
-                    if isSelected {
-                        selectedMuscles.remove(muscle)
-                    } else {
-                        selectedMuscles.insert(muscle)
-                    }
-                } label: {
-                    Text(muscle.displayName)
-                        .font(.caption)
-                        .fontWeight(.semibold)
-                        .foregroundColor(isSelected ? .white : themeManager.secondaryText)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity)
-                        .background(isSelected ? Color(red: 0.85, green: 0.15, blue: 0.15) : themeManager.inputBackground)
-                        .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-}
-
-// MARK: - Add Historical Workout View
-struct AddHistoricalWorkoutView: View {
-    @EnvironmentObject var themeManager: ThemeManager
-    @Environment(\.modelContext) private var context
-    @Environment(\.dismiss) private var dismiss
-    @Query(sort: \Exercise.name) var exercises: [Exercise]
-    
-    @State private var selectedExercise: Exercise?
-    @State private var workoutDate = Date()
-    @State private var selectedLocation: WorkoutLocation = .planetFitness
-    @State private var machineSettings = ""
-    @State private var sessionNotes = ""
-    @State private var sets: [HistoricalSet] = [HistoricalSet()]
-    
-    // Cardio
-    @State private var warmUpTime: Double?
-    @State private var runningTime: Double?
-    @State private var coolDownTime: Double?
-    @State private var runningSpeed: Double?
-    @State private var intensityRating: Double = 5
-    
-    struct HistoricalSet: Identifiable {
-        let id = UUID()
-        var reps: Int = 0
-        var weight: Double = 0
-        var difficulty: Int = 3
-        var notes: String = ""
-    }
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                themeManager.background.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Date Picker
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Workout Date")
-                                .font(.headline)
-                                .foregroundColor(themeManager.secondaryText)
-                            DatePicker("", selection: $workoutDate, in: ...Date(), displayedComponents: [.date, .hourAndMinute])
-                                .datePickerStyle(.compact)
-                                .labelsHidden()
-                                .tint(Color.appAccent)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(12)
-                        
-                        // Exercise Picker
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Exercise")
-                                .font(.headline)
-                                .foregroundColor(themeManager.secondaryText)
-                            
-                            Menu {
-                                ForEach(exercises) { exercise in
-                                    Button(exercise.name) {
-                                        selectedExercise = exercise
-                                    }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(selectedExercise?.name ?? "Select Exercise")
-                                        .foregroundColor(selectedExercise == nil ? themeManager.secondaryText : themeManager.primaryText)
-                                    Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .foregroundColor(themeManager.secondaryText)
-                                }
-                                .padding()
-                                .background(themeManager.secondaryBackground)
-                                .cornerRadius(10)
-                            }
-                        }
-                        .padding()
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(12)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Workout Location")
-                                .font(.headline)
-                                .foregroundColor(themeManager.secondaryText)
-
-                            Picker("Workout Location", selection: $selectedLocation) {
-                                ForEach(WorkoutLocation.allCases) { location in
-                                    Text(location.rawValue).tag(location)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                        }
-                        .padding()
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(12)
-                        
-                        if let exercise = selectedExercise {
-                            if exercise.isCardio {
-                                cardioInputSection
-                            } else {
-                                strengthInputSection
-                            }
-                        }
-                        
-                        // Session Notes
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Session Notes")
-                                .font(.headline)
-                                .foregroundColor(themeManager.secondaryText)
-                            TextEditor(text: $sessionNotes)
-                                .frame(height: 80)
-                                .padding(8)
-                                .background(themeManager.secondaryBackground)
-                                .cornerRadius(10)
-                                .foregroundColor(themeManager.primaryText)
-                                .scrollContentBackground(.hidden)
-                        }
-                        .padding()
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(12)
-                        
-                        // Save Button
-                        Button(action: saveHistoricalWorkout) {
-                            Text("Save Historical Workout")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(selectedExercise == nil ? Color.gray : Color.appAccent)
-                                .cornerRadius(15)
-                        }
-                        .disabled(selectedExercise == nil)
-                        .padding(.top, 10)
-                    }
-                    .padding()
-                }
-            }
-            .navigationTitle("Add Historical Workout")
-            .navigationBarTitleDisplayMode(.inline)
-            .dismissableKeyboard()
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundColor(themeManager.secondaryText)
-                }
-            }
-            .preferredColorScheme(themeManager.colorScheme)
-            .fontDesign(themeManager.selectedFont.design)
-        }
-    }
-    
-    var cardioInputSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Cardio Metrics")
-                .font(.headline)
-                .foregroundColor(themeManager.primaryText)
-            
-            HStack(spacing: 15) {
-                VStack(alignment: .leading) {
-                    Text("Warm-up (min)")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                    TextField("0", value: $warmUpTime, format: .number)
-                        .keyboardType(.decimalPad)
-                        .padding()
-                        .background(themeManager.secondaryBackground)
-                        .cornerRadius(8)
-                        .foregroundColor(themeManager.primaryText)
-                }
-                
-                VStack(alignment: .leading) {
-                    Text("Run (min)")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                    TextField("0", value: $runningTime, format: .number)
-                        .keyboardType(.decimalPad)
-                        .padding()
-                        .background(themeManager.secondaryBackground)
-                        .cornerRadius(8)
-                        .foregroundColor(themeManager.primaryText)
-                }
-            }
-            
-            HStack(spacing: 15) {
-                VStack(alignment: .leading) {
-                    Text("Cool-down (min)")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                    TextField("0", value: $coolDownTime, format: .number)
-                        .keyboardType(.decimalPad)
-                        .padding()
-                        .background(themeManager.secondaryBackground)
-                        .cornerRadius(8)
-                        .foregroundColor(themeManager.primaryText)
-                }
-                
-                VStack(alignment: .leading) {
-                    Text("Speed")
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                    TextField("0", value: $runningSpeed, format: .number)
-                        .keyboardType(.decimalPad)
-                        .padding()
-                        .background(themeManager.secondaryBackground)
-                        .cornerRadius(8)
-                        .foregroundColor(themeManager.primaryText)
-                }
-            }
-            
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Intensity")
-                        .foregroundColor(themeManager.primaryText)
-                    Spacer()
-                    Text("\(Int(intensityRating))/10")
-                        .fontWeight(.bold)
-                        .foregroundColor(Color.appAccent)
-                }
-                Slider(value: $intensityRating, in: 1...10, step: 1)
-                    .tint(.appAccent)
-            }
-        }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(12)
-    }
-    
-    var strengthInputSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Sets")
-                .font(.headline)
-                .foregroundColor(themeManager.primaryText)
-            
-            // Machine Settings
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Machine Settings")
-                    .font(.caption)
-                    .foregroundColor(themeManager.secondaryText)
-                TextField("e.g. Seat Position 4", text: $machineSettings)
-                    .padding()
-                    .background(themeManager.secondaryBackground)
-                    .cornerRadius(8)
-                    .foregroundColor(themeManager.primaryText)
-            }
-            
-            ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text("Set \(index + 1)")
-                            .fontWeight(.semibold)
-                            .foregroundColor(Color.appAccent)
-                        Spacer()
-                        if sets.count > 1 {
-                            Button(action: { sets.remove(at: index) }) {
-                                Image(systemName: "trash")
-                                    .foregroundColor(.red)
-                                    .font(.caption)
-                            }
-                        }
-                    }
-                    
-                    HStack(spacing: 15) {
-                        VStack(alignment: .leading) {
-                            Text("Reps")
-                                .font(.caption)
-                                .foregroundColor(themeManager.secondaryText)
-                            TextField("0", value: $sets[index].reps, format: .number)
-                                .keyboardType(.numberPad)
-                                .padding(10)
-                                .background(themeManager.secondaryBackground)
-                                .cornerRadius(8)
-                                .foregroundColor(themeManager.primaryText)
-                        }
-                        
-                        VStack(alignment: .leading) {
-                            Text("Weight (lbs)")
-                                .font(.caption)
-                                .foregroundColor(themeManager.secondaryText)
-                            TextField("0", value: $sets[index].weight, format: .number)
-                                .keyboardType(.decimalPad)
-                                .padding(10)
-                                .background(themeManager.secondaryBackground)
-                                .cornerRadius(8)
-                                .foregroundColor(themeManager.primaryText)
-                        }
-                    }
-                    
-                    HStack {
-                        Text("Difficulty")
-                            .font(.caption)
-                            .foregroundColor(themeManager.secondaryText)
-                        Spacer()
-                        DifficultyDots(rating: sets[index].difficulty, size: 18, interactive: true) { newRating in
-                            sets[index].difficulty = newRating
-                        }
-                    }
-                }
-                .padding()
-                .background(themeManager.secondaryBackground)
-                .cornerRadius(10)
-            }
-            
-            Button(action: { sets.append(HistoricalSet()) }) {
-                HStack {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Add Set")
-                }
-                .foregroundColor(Color.appAccent)
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.appAccent.opacity(0.1))
-                .cornerRadius(10)
-            }
-        }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(12)
-    }
-    
-    private func saveHistoricalWorkout() {
-        guard let exercise = selectedExercise else { return }
-        
-        let session = ExerciseSession(
-            date: workoutDate,
-            machineSettings: machineSettings,
-            totalSets: exercise.isCardio ? 1 : sets.count,
-            notes: sessionNotes,
-            location: selectedLocation,
-            warmUpTime: warmUpTime,
-            runningTime: runningTime,
-            coolDownTime: coolDownTime,
-            runningSpeed: runningSpeed,
-            intensityRating: exercise.isCardio ? Int(intensityRating) : nil
-        )
-        context.insert(session)
-        
-        if !exercise.isCardio {
-            for (index, set) in sets.enumerated() {
-                let loggedSet = LoggedSet(
-                    setNumber: index + 1,
-                    reps: set.reps,
-                    weight: set.weight,
-                    notes: set.notes,
-                    difficulty: set.difficulty,
-                    restTimeSeconds: nil
-                )
-                context.insert(loggedSet)
-                loggedSet.session = session
-            }
-        }
-        
-        session.exercise = exercise
-        
-        do {
-            try context.save()
-            let impact = UINotificationFeedbackGenerator()
-            impact.notificationOccurred(.success)
-            dismiss()
-        } catch {
-            print("Error saving historical workout: \(error)")
-        }
-    }
-}
-
-struct LegendItem: View {
-    let color: Color
-    let label: String
-    let themeManager: ThemeManager
-    
-    var body: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(label)
-                .font(.caption)
-                .foregroundColor(themeManager.secondaryText)
-        }
-    }
-}
+// MARK: - Share sheet
 
 struct ShareSheet: UIViewControllerRepresentable {
-    let activityItems: [Any]
+    let items: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-
-        let controller = UIActivityViewController(
-            activityItems: activityItems,
-            applicationActivities: nil
-        )
-
-        return controller
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
 
     func updateUIViewController(
@@ -1142,6 +1133,7 @@ struct ShareSheet: UIViewControllerRepresentable {
         context: Context
     ) {}
 }
+
 extension URL: @retroactive Identifiable {
     public var id: String { absoluteString }
 }

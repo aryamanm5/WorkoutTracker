@@ -3,570 +3,436 @@ import SwiftData
 import Charts
 import PhotosUI
 
+/// Body tab: weight trend with weekly rate, creatine habit, progress photos.
 struct BodyWeightView: View {
-    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
-    @Query(sort: \BodyWeightEntry.date, order: .reverse) var entries: [BodyWeightEntry]
-    @Query var workoutDays: [WorkoutDay]
-    @Query(sort: \ProgressPhoto.date, order: .reverse) var progressPhotos: [ProgressPhoto]
-    
-    @State private var showingAddEntry = false
-    @State private var newWeight: Double? = nil
-    @State private var newNotes: String = ""
-    @State private var showingUnusualWeightAlert = false
-    @State private var pendingWeightSave = false
-    @State private var entryPendingDeletion: BodyWeightEntry?
-    @State private var selectedProgressPhotoItem: PhotosPickerItem?
-    @State private var progressPhotoNotes = ""
-    
-    // Creatine tracking for today
-    @State private var tookCreatineToday = false
-    @State private var creatineLogDate = Date()
-    
-    var sortedEntriesForChart: [BodyWeightEntry] {
-        entries.sorted { $0.date < $1.date }
-    }
-    
-    var creatineStreak: Int {
-        calculateCreatineStreak()
-    }
-    
+    @EnvironmentObject var themeManager: ThemeManager
+
+    @Query(sort: \BodyWeightEntry.date, order: .reverse) private var entries: [BodyWeightEntry]
+    @Query private var workoutDays: [WorkoutDay]
+    @Query(sort: \ProgressPhoto.date, order: .reverse) private var photos: [ProgressPhoto]
+
+    @State private var showingAddSheet = false
+    @State private var entryToDelete: BodyWeightEntry?
+
+    @AppStorage("progressPhotosEnabled") private var progressPhotosEnabled = true
+    @AppStorage("progressPhotosLockEnabled") private var progressPhotosLockEnabled = false
+    @AppStorage("progressPhotosPasswordHash") private var progressPhotosPasswordHash = ""
+    @State private var photosUnlocked = false
+    @State private var showingUnlockPrompt = false
+    @State private var showingWrongPassword = false
+    @State private var unlockEntry = ""
+
     var body: some View {
         NavigationStack {
-            ZStack {
-                themeManager.background.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        // Creatine Tracking Card
-                        creatineCard
-
-                        progressPhotosSection
-                        
-                        // Current Weight Card
-                        if let latest = entries.first {
-                            VStack(spacing: 10) {
-                                Text("Current Weight")
-                                    .font(.subheadline)
-                                    .foregroundColor(themeManager.secondaryText)
-                                Text("\(latest.weight, specifier: "%.1f")")
-                                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                                    .foregroundColor(themeManager.primaryText)
-                                Text("lbs")
-                                    .font(.title3)
-                                    .foregroundColor(themeManager.secondaryText)
-                                
-                                if entries.count > 1 {
-                                    let diff = latest.weight - entries[1].weight
-                                    HStack {
-                                        Image(systemName: diff >= 0 ? "arrow.up" : "arrow.down")
-                                        Text("\(abs(diff), specifier: "%.1f") lbs")
-                                    }
-                                    .font(.subheadline)
-                                    .foregroundColor(diff >= 0 ? .red : .green)
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 30)
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(16)
-                            .padding(.horizontal)
-                        }
-                        
-                        // Chart
-                        if entries.count > 1 {
-                            VStack(alignment: .leading, spacing: 15) {
-                                Text("Weight Trend")
-                                    .font(.headline)
-                                    .foregroundColor(themeManager.primaryText)
-                                
-                                Chart {
-                                    ForEach(sortedEntriesForChart) { entry in
-                                        LineMark(
-                                            x: .value("Date", entry.date),
-                                            y: .value("Weight", entry.weight)
-                                        )
-                                        .foregroundStyle(Color.appAccent)
-                                        
-                                        AreaMark(
-                                            x: .value("Date", entry.date),
-                                            y: .value("Weight", entry.weight)
-                                        )
-                                        .foregroundStyle(
-                                            LinearGradient(
-                                                colors: [Color.appAccent.opacity(0.3), Color.clear],
-                                                startPoint: .top,
-                                                endPoint: .bottom
-                                            )
-                                        )
-                                    }
-                                }
-                                .chartYAxis {
-                                    AxisMarks(position: .leading)
-                                }
-                                .frame(height: 200)
-                            }
-                            .padding()
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(16)
-                            .padding(.horizontal)
-                        }
-                        
-                        // History
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("Weight History")
-                                .font(.headline)
-                                .foregroundColor(themeManager.primaryText)
-                            
-                            if entries.isEmpty {
-                                Text("No weight entries yet")
-                                    .foregroundColor(themeManager.secondaryText)
-                                    .padding()
-                            } else {
-                                ForEach(entries) { entry in
-                                    WeightEntryRow(
-                                        entry: entry,
-                                        themeManager: themeManager
-                                    ) {
-                                        entryPendingDeletion = entry
-                                    }
-                                }
-                            }
-                        }
-                        .padding()
-                        .background(themeManager.cardBackground)
-                        .cornerRadius(16)
-                        .padding(.horizontal)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    weightHeroCard
+                    creatineCard
+                    if progressPhotosEnabled {
+                        photosCard
                     }
-                    .padding(.vertical)
+                    historyCard
                 }
+                .padding(16)
+                .padding(.bottom, 24)
             }
-            .navigationTitle("Weight & Creatine")
-            .dismissableKeyboard()
-            .toolbarColorScheme(themeManager.colorScheme, for: .navigationBar)
+            .background(themeManager.background.ignoresSafeArea())
+            .navigationTitle("Body")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: { showingAddEntry = true }) {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingAddSheet = true
+                    } label: {
                         Image(systemName: "plus.circle.fill")
-                            .foregroundColor(Color.appAccent)
+                            .foregroundColor(.appAccent)
                     }
                 }
             }
-            .sheet(isPresented: $showingAddEntry) {
-                addEntrySheet
-                    .fontDesign(themeManager.selectedFont.design)
-            }
-            .alert("Check weight", isPresented: $showingUnusualWeightAlert) {
-                Button("Edit", role: .cancel) {
-                    pendingWeightSave = false
-                }
-                Button("Save Anyway") {
-                    pendingWeightSave = false
-                    saveEntryConfirmed()
-                }
-            } message: {
-                Text("This weight is much higher than your most recent entry. Is it correct?")
+            .sheet(isPresented: $showingAddSheet) {
+                QuickWeightSheet()
+                    .themedPresentation()
+                    .presentationDetents([.medium])
             }
             .confirmationDialog(
-                "Delete this weight entry?",
+                "Delete this entry?",
                 isPresented: Binding(
-                    get: { entryPendingDeletion != nil },
-                    set: { if !$0 { entryPendingDeletion = nil } }
+                    get: { entryToDelete != nil },
+                    set: { if !$0 { entryToDelete = nil } }
                 ),
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) {
-                    if let entry = entryPendingDeletion {
-                        deleteWeightEntry(entry)
+                    if let entry = entryToDelete {
+                        context.delete(entry)
+                        try? context.save()
                     }
-                    entryPendingDeletion = nil
+                    entryToDelete = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    entryPendingDeletion = nil
-                }
+                Button("Cancel", role: .cancel) { entryToDelete = nil }
             }
-            .onAppear(perform: loadCreatineStatus)
-            .preferredColorScheme(themeManager.colorScheme)
         }
     }
-    
-    var creatineCard: some View {
-        VStack(spacing: 15) {
-            HStack {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Creatine Tracking")
-                        .font(.headline)
+
+    // MARK: - Weight hero
+
+    private var recentEntries: [BodyWeightEntry] {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
+        return entries.filter { $0.date >= cutoff }.sorted { $0.date < $1.date }
+    }
+
+    /// lb per week over the last 30 days of entries.
+    private var weeklyRate: Double? {
+        let recent = recentEntries
+        guard let first = recent.first, let last = recent.last, recent.count >= 2 else { return nil }
+        let days = last.date.timeIntervalSince(first.date) / 86400
+        guard days >= 3 else { return nil }
+        return (last.weight - first.weight) / days * 7
+    }
+
+    private var weightHeroCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionKicker(text: "Body Weight")
+
+            if let latest = entries.first {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(TrainingEngine.formatWeight(latest.weight))
+                        .font(.system(size: 44, weight: .heavy, design: .rounded))
                         .foregroundColor(themeManager.primaryText)
-                    
-                    HStack {
-                        Image(systemName: "flame.fill")
-                            .foregroundColor(.orange)
-                        Text("\(creatineStreak) day streak")
-                            .font(.subheadline)
-                            .foregroundColor(.orange)
+                    Text("lb")
+                        .appHeadingStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                    Spacer()
+                    if let rate = weeklyRate {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            HStack(spacing: 3) {
+                                Image(systemName: rate > 0.05 ? "arrow.up.right" : (rate < -0.05 ? "arrow.down.right" : "arrow.right"))
+                                Text("\(String(format: "%+.1f", rate)) lb")
+                            }
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                            .foregroundColor(rate > 0.05 ? .appDanger : (rate < -0.05 ? .appSuccess : themeManager.secondaryText))
+                            Text("per week")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(themeManager.secondaryText)
+                        }
                     }
                 }
-                
-                Spacer()
-                
-                Button(action: {
-                    tookCreatineToday.toggle()
-                    updateCreatineStatus(on: Date(), took: tookCreatineToday)
-                    triggerHaptic()
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: tookCreatineToday ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 44))
-                            .foregroundColor(tookCreatineToday ? .green : themeManager.secondaryText)
-                        Text(tookCreatineToday ? "Done!" : "Take")
-                            .font(.caption)
-                            .foregroundColor(tookCreatineToday ? .green : themeManager.secondaryText)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            
-            // Weekly view
-            HStack(spacing: 8) {
-                ForEach(getLast7Days(), id: \.self) { date in
-                    VStack(spacing: 4) {
-                        Text(dayLetter(for: date))
-                            .font(.caption2)
-                            .foregroundColor(themeManager.secondaryText)
-                        Circle()
-                            .fill(hasCreatine(on: date) ? Color.green : themeManager.secondaryText.opacity(0.3))
-                            .frame(width: 24, height: 24)
-                            .overlay(
-                                Calendar.current.isDateInToday(date) ?
-                                Circle().stroke(themeManager.primaryText, lineWidth: 2) : nil
+
+                if recentEntries.count >= 2 {
+                    Chart(recentEntries, id: \.persistentModelID) { entry in
+                        AreaMark(
+                            x: .value("Date", entry.date),
+                            y: .value("Weight", entry.weight)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.appCardio.opacity(0.3), Color.appCardio.opacity(0.02)],
+                                startPoint: .top, endPoint: .bottom
                             )
+                        )
+                        .interpolationMethod(.catmullRom)
+
+                        LineMark(
+                            x: .value("Date", entry.date),
+                            y: .value("Weight", entry.weight)
+                        )
+                        .foregroundStyle(Color.appCardio)
+                        .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                        .interpolationMethod(.catmullRom)
                     }
+                    .chartYScale(domain: weightDomain)
+                    .chartXAxis(.hidden)
+                    .frame(height: 110)
                 }
-            }
 
-            Divider()
-                .background(themeManager.secondaryText.opacity(0.3))
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Log Historical Creatine")
-                    .font(.subheadline)
+                Text("Logged \(latest.date.formatted(.relative(presentation: .named)))")
+                    .appCaptionStyle()
                     .foregroundColor(themeManager.secondaryText)
-
-                DatePicker("Date", selection: $creatineLogDate, in: ...Date(), displayedComponents: .date)
-                    .datePickerStyle(.compact)
-                    .tint(Color.appAccent)
-
-                Button(action: toggleHistoricalCreatine) {
-                    Label(hasCreatine(on: creatineLogDate) ? "Mark as Not Taken" : "Mark as Taken", systemImage: hasCreatine(on: creatineLogDate) ? "xmark.circle" : "checkmark.circle.fill")
-                        .foregroundColor(hasCreatine(on: creatineLogDate) ? .red : Color.appAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(themeManager.secondaryBackground)
-                        .cornerRadius(10)
-                }
+            } else {
+                Text("No entries yet — tap + to log your first weigh-in.")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.secondaryText)
             }
         }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
-        .padding(.horizontal)
-        .padding(.top, 10)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
     }
 
-    var progressPhotosSection: some View {
-        VStack(alignment: .leading, spacing: 15) {
+    private var weightDomain: ClosedRange<Double> {
+        let values = recentEntries.map(\.weight)
+        let minValue = values.min() ?? 0
+        let maxValue = values.max() ?? 1
+        let padding = max((maxValue - minValue) * 0.2, 2)
+        return (minValue - padding)...(maxValue + padding)
+    }
+
+    // MARK: - Creatine
+
+    private var creatineStreak: Int {
+        let calendar = Calendar.current
+        var streak = 0
+        var cursor = calendar.startOfDay(for: Date())
+        if !tookCreatine(on: cursor) {
+            cursor = calendar.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        while tookCreatine(on: cursor) {
+            streak += 1
+            cursor = calendar.date(byAdding: .day, value: -1, to: cursor)!
+        }
+        return streak
+    }
+
+    private func tookCreatine(on date: Date) -> Bool {
+        workoutDays.first { Calendar.current.isDate($0.date, inSameDayAs: date) }?.tookCreatine ?? false
+    }
+
+    private var creatineCard: some View {
+        let takenToday = tookCreatine(on: Date())
+
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Progress Photos")
-                    .font(.headline)
-                    .foregroundColor(themeManager.primaryText)
-
+                SectionKicker(text: "Creatine")
                 Spacer()
-
-                PhotosPicker(selection: $selectedProgressPhotoItem, matching: .images) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title3)
-                        .foregroundColor(Color.appAccent)
+                if creatineStreak > 0 {
+                    ChipLabel(text: "🔥 \(creatineStreak) day\(creatineStreak == 1 ? "" : "s")", color: .appCreatine)
                 }
             }
 
-            TextField("Photo notes (optional)", text: $progressPhotoNotes)
-                .padding()
-                .background(themeManager.secondaryBackground)
-                .cornerRadius(10)
-                .foregroundColor(themeManager.primaryText)
+            Button {
+                updateCreatineStatus(on: Date(), took: !takenToday, context: context, days: workoutDays)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                HStack {
+                    Image(systemName: takenToday ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 22))
+                    Text(takenToday ? "Taken today" : "Mark taken today")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    Spacer()
+                }
+                .foregroundColor(takenToday ? .white : .appCreatine)
+                .padding(14)
+                .background(takenToday ? AnyShapeStyle(Color.appCreatine) : AnyShapeStyle(Color.appCreatine.opacity(0.12)))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
 
-            if progressPhotos.isEmpty {
-                Text("No progress photos yet")
+            // Last 14 days
+            let calendar = Calendar.current
+            HStack(spacing: 5) {
+                ForEach(0..<14, id: \.self) { offset in
+                    let day = calendar.date(byAdding: .day, value: offset - 13, to: calendar.startOfDay(for: Date()))!
+                    VStack(spacing: 3) {
+                        Circle()
+                            .fill(tookCreatine(on: day) ? Color.appCreatine : themeManager.inputBackground)
+                            .frame(height: 14)
+                            .overlay(
+                                Circle().stroke(offset == 13 ? Color.appAccent : .clear, lineWidth: 1.5)
+                            )
+                        Text(day.formatted(.dateTime.weekday(.narrow)))
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(themeManager.secondaryText)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .onTapGesture {
+                        updateCreatineStatus(on: day, took: !tookCreatine(on: day), context: context, days: workoutDays)
+                    }
+                }
+            }
+            Text("Tap any day to fix your history.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(themeManager.secondaryText)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+    }
+
+    // MARK: - Progress photos
+
+    private var photosLocked: Bool {
+        progressPhotosLockEnabled && !progressPhotosPasswordHash.isEmpty && !photosUnlocked
+    }
+
+    private var photosCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionKicker(text: "Progress Photos")
+                Spacer()
+                if photosLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(themeManager.secondaryText)
+                } else {
+                    PhotoPickerButton()
+                }
+            }
+
+            if photosLocked {
+                Button {
+                    showingUnlockPrompt = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 20))
+                        Text("Photos are locked — tap to unlock")
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        Spacer()
+                    }
+                    .foregroundColor(.appAccent)
+                    .padding(14)
+                    .background(Color.appAccentSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+            } else if photos.isEmpty {
+                Text("Photos live only on this device. Add one to start your timeline.")
+                    .appBodyStyle()
                     .foregroundColor(themeManager.secondaryText)
-                    .padding(.vertical, 8)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
-                        ForEach(progressPhotos) { photo in
-                            ProgressPhotoCard(photo: photo, themeManager: themeManager) {
-                                deleteProgressPhoto(photo)
-                            }
+                        ForEach(photos, id: \.persistentModelID) { photo in
+                            ProgressPhotoCard(photo: photo)
                         }
                     }
                 }
             }
         }
-        .padding()
-        .background(themeManager.cardBackground)
-        .cornerRadius(16)
-        .padding(.horizontal)
-        .onChange(of: selectedProgressPhotoItem) {
-            Task {
-                await saveSelectedProgressPhoto()
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
+        .alert("Unlock Progress Photos", isPresented: $showingUnlockPrompt) {
+            SecureField("Password", text: $unlockEntry)
+            Button("Unlock") {
+                if PasscodeHasher.hash(unlockEntry.trimmingCharacters(in: .whitespaces)) == progressPhotosPasswordHash {
+                    photosUnlocked = true
+                } else {
+                    showingWrongPassword = true
+                }
+                unlockEntry = ""
             }
+            Button("Cancel", role: .cancel) { unlockEntry = "" }
+        }
+        .alert("Wrong Password", isPresented: $showingWrongPassword) {
+            Button("OK") {}
+        } message: {
+            Text("Try again to see your photos.")
         }
     }
-    
-    var addEntrySheet: some View {
-        NavigationStack {
-            ZStack {
-                themeManager.background.ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Weight (lbs)")
-                            .font(.headline)
-                            .foregroundColor(themeManager.secondaryText)
-                        TextField("Enter weight", value: $newWeight, format: .number)
-                            .keyboardType(.decimalPad)
-                            .padding()
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(12)
+
+    // MARK: - History
+
+    private var historyCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            SectionKicker(text: "History")
+                .padding(.bottom, 8)
+            if entries.isEmpty {
+                Text("Weigh-ins will appear here.")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+            ForEach(Array(entries.prefix(30)), id: \.persistentModelID) { entry in
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(TrainingEngine.formatWeight(entry.weight)) lb")
+                            .appBodyStyle()
+                            .fontWeight(.semibold)
                             .foregroundColor(themeManager.primaryText)
-                            .font(.title2)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Notes (optional)")
-                            .font(.headline)
+                        Text(entry.date.formatted(date: .abbreviated, time: .omitted))
+                            .appCaptionStyle()
                             .foregroundColor(themeManager.secondaryText)
-                        TextField("e.g. Morning weight", text: $newNotes)
-                            .padding()
-                            .background(themeManager.cardBackground)
-                            .cornerRadius(12)
-                            .foregroundColor(themeManager.primaryText)
                     }
-                    
                     Spacer()
-                }
-                .padding()
-            }
-            .navigationTitle("Log Weight")
-            .navigationBarTitleDisplayMode(.inline)
-            .dismissableKeyboard()
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { showingAddEntry = false }
-                        .foregroundColor(themeManager.secondaryText)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveEntry()
+                    if !entry.notes.isEmpty {
+                        Text(entry.notes)
+                            .appCaptionStyle()
+                            .foregroundColor(themeManager.secondaryText)
+                            .lineLimit(1)
                     }
-                    .disabled(newWeight == nil)
-                    .foregroundColor(newWeight == nil ? themeManager.secondaryText : Color.appAccent)
+                    Button {
+                        entryToDelete = entry
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13))
+                            .foregroundColor(.appDanger.opacity(0.7))
+                    }
+                }
+                .padding(.vertical, 8)
+                if entry.persistentModelID != entries.prefix(30).last?.persistentModelID {
+                    Divider()
                 }
             }
-            .preferredColorScheme(themeManager.colorScheme)
         }
-        .presentationDetents([.medium])
-    }
-    
-    private func loadCreatineStatus() {
-        let today = Calendar.current.startOfDay(for: Date())
-        tookCreatineToday = workoutDays.first { Calendar.current.isDate($0.date, inSameDayAs: today) }?.tookCreatine ?? false
-    }
-    
-    private func updateCreatineStatus(on date: Date, took: Bool) {
-        let day = Calendar.current.startOfDay(for: date)
-        
-        if let existingDay = workoutDays.first(where: { Calendar.current.isDate($0.date, inSameDayAs: day) }) {
-            existingDay.tookCreatine = took
-        } else {
-            let newDay = WorkoutDay(date: day, type: .rest, tookCreatine: took)
-            context.insert(newDay)
-        }
-        
-        try? context.save()
-    }
-
-    private func toggleHistoricalCreatine() {
-        let currentlyTaken = hasCreatine(on: creatineLogDate)
-        updateCreatineStatus(on: creatineLogDate, took: !currentlyTaken)
-        loadCreatineStatus()
-        triggerHaptic()
-    }
-    
-    private func hasCreatine(on date: Date) -> Bool {
-        workoutDays.first { Calendar.current.isDate($0.date, inSameDayAs: date) }?.tookCreatine ?? false
-    }
-    
-    private func getLast7Days() -> [Date] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return (0..<7).compactMap { calendar.date(byAdding: .day, value: -6 + $0, to: today) }
-    }
-    
-    private func dayLetter(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "E"
-        return String(formatter.string(from: date).prefix(1))
-    }
-    
-    private func calculateCreatineStreak() -> Int {
-        let calendar = Calendar.current
-        var streak = 0
-        var currentDate = calendar.startOfDay(for: Date())
-        
-        if hasCreatine(on: currentDate) {
-            streak = 1
-            currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
-        } else {
-            currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
-        }
-        
-        while hasCreatine(on: currentDate) {
-            streak += 1
-            currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate)!
-        }
-        
-        return streak
-    }
-    
-    private func triggerHaptic() {
-        let impact = UIImpactFeedbackGenerator(style: .medium)
-        impact.impactOccurred()
-    }
-    func saveEntry() {
-        guard let weight = newWeight else { return }
-        if shouldConfirmWeight(weight), !pendingWeightSave {
-            pendingWeightSave = true
-            showingUnusualWeightAlert = true
-            return
-        }
-
-        saveEntryConfirmed()
-    }
-
-    func saveEntryConfirmed() {
-        guard let weight = newWeight else { return }
-        let entry = BodyWeightEntry(date: Date(), weight: weight, notes: newNotes)
-        context.insert(entry)
-        try? context.save()
-        
-        newWeight = nil
-        newNotes = ""
-        showingAddEntry = false
-    }
-
-    private func shouldConfirmWeight(_ weight: Double) -> Bool {
-        guard let latestWeight = entries.first?.weight, latestWeight > 0 else {
-            return weight >= 500
-        }
-
-        return weight >= max(latestWeight * 1.2, latestWeight + 25)
-    }
-    
-    func deleteWeightEntry(_ entry: BodyWeightEntry) {
-        context.delete(entry)
-        try? context.save()
-    }
-
-    @MainActor
-    private func saveSelectedProgressPhoto() async {
-        guard let selectedProgressPhotoItem,
-              let data = try? await selectedProgressPhotoItem.loadTransferable(type: Data.self) else {
-            return
-        }
-
-        let photo = ProgressPhoto(date: Date(), imageData: data, notes: progressPhotoNotes)
-        context.insert(photo)
-        try? context.save()
-        self.selectedProgressPhotoItem = nil
-        progressPhotoNotes = ""
-    }
-
-    private func deleteProgressPhoto(_ photo: ProgressPhoto) {
-        context.delete(photo)
-        try? context.save()
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
     }
 }
 
-struct ProgressPhotoCard: View {
-    let photo: ProgressPhoto
-    let themeManager: ThemeManager
-    let onDelete: () -> Void
+// MARK: - Photo picker button
+
+private struct PhotoPickerButton: View {
+    @Environment(\.modelContext) private var context
+    @State private var selectedItem: PhotosPickerItem?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        PhotosPicker(selection: $selectedItem, matching: .images) {
+            Label("Add", systemImage: "camera.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.appAccent)
+        }
+        .onChange(of: selectedItem) {
+            guard let item = selectedItem else { return }
+            Task { @MainActor in
+                if let data = try? await item.loadTransferable(type: Data.self) {
+                    context.insert(ProgressPhoto(date: Date(), imageData: data))
+                    try? context.save()
+                }
+                selectedItem = nil
+            }
+        }
+    }
+}
+
+// MARK: - Photo card
+
+private struct ProgressPhotoCard: View {
+    let photo: ProgressPhoto
+
+    @Environment(\.modelContext) private var context
+    @EnvironmentObject var themeManager: ThemeManager
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
             if let image = UIImage(data: photo.imageData) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 140, height: 180)
-                    .clipped()
-                    .cornerRadius(10)
+                    .frame(width: 130, height: 170)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-
-            Text(photo.date.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption)
-                .foregroundColor(themeManager.secondaryText)
-
-            if !photo.notes.isEmpty {
-                Text(photo.notes)
-                    .font(.caption2)
+            HStack {
+                Text(photo.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(themeManager.secondaryText)
-                    .lineLimit(2)
-            }
-
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-                    .font(.caption)
-            }
-        }
-        .frame(width: 140, alignment: .leading)
-    }
-}
-
-struct WeightEntryRow: View {
-    let entry: BodyWeightEntry
-    let themeManager: ThemeManager
-    var onDelete: (() -> Void)? = nil
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.subheadline)
-                    .foregroundColor(themeManager.secondaryText)
-                if !entry.notes.isEmpty {
-                    Text(entry.notes)
-                        .font(.caption)
-                        .foregroundColor(themeManager.secondaryText)
-                }
-            }
-            Spacer()
-            Text("\(entry.weight, specifier: "%.1f") lbs")
-                .fontWeight(.semibold)
-                .foregroundColor(themeManager.primaryText)
-
-            if let onDelete {
-                Button(action: onDelete) {
+                Spacer()
+                Button {
+                    confirmingDelete = true
+                } label: {
                     Image(systemName: "trash")
-                        .font(.subheadline)
-                        .foregroundColor(.red.opacity(0.8))
-                        .padding(.leading, 6)
+                        .font(.system(size: 11))
+                        .foregroundColor(.appDanger.opacity(0.7))
                 }
-                .buttonStyle(.plain)
             }
+            .frame(width: 130)
         }
-        .padding()
-        .background(themeManager.secondaryBackground)
-        .cornerRadius(10)
+        .confirmationDialog("Delete this photo?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                context.delete(photo)
+                try? context.save()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }

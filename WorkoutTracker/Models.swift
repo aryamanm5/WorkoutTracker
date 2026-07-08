@@ -1,5 +1,15 @@
 import Foundation
 import SwiftData
+import CryptoKit
+
+/// SHA-256 helper for the progress-photos password. Not bank-grade security —
+/// just keeps the photos out of casual reach when handing the phone over.
+enum PasscodeHasher {
+    static func hash(_ value: String) -> String {
+        let digest = SHA256.hash(data: Data(value.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
 
 // MARK: - TargetMuscle
 // Paste this block at the top of Models.swift, before WorkoutType
@@ -157,9 +167,21 @@ enum WorkoutType: String, Codable, CaseIterable {
 
 enum WorkoutLocation: String, Codable, CaseIterable, Identifiable {
     case home = "Home"
-    case planetFitness = "Planet Fitness"
+    case gym = "The Gym"
 
     var id: String { rawValue }
+
+    /// Decodes stored values, mapping the pre-rename "Planet Fitness" rows.
+    static func from(stored: String) -> WorkoutLocation {
+        WorkoutLocation(rawValue: stored) ?? .gym
+    }
+
+    var icon: String {
+        switch self {
+        case .home: return "house.fill"
+        case .gym: return "building.2.fill"
+        }
+    }
 }
 
 @Model
@@ -188,13 +210,21 @@ class Exercise {
     var suggestedNextWeight: Double?
     var shouldIncreaseWeight: Bool
     var targetMuscleRawValues: [String] = []
-    
+    /// Home and gym keep fully separate exercise libraries; pre-existing
+    /// exercises default to the gym, where their history was logged.
+    var locationRawValue: String = WorkoutLocation.gym.rawValue
+
     @Relationship(deleteRule: .cascade, inverse: \ExerciseSession.exercise)
     var sessions: [ExerciseSession] = []
-    
+
     var type: WorkoutType {
         get { WorkoutType(rawValue: typeRawValue) ?? .rest }
         set { typeRawValue = newValue.rawValue }
+    }
+
+    var location: WorkoutLocation {
+        get { WorkoutLocation.from(stored: locationRawValue) }
+        set { locationRawValue = newValue.rawValue }
     }
 
     var targetMuscles: Set<TargetMuscle> {
@@ -211,13 +241,14 @@ class Exercise {
         }
     }
     
-    init(name: String, type: WorkoutType, isCardio: Bool = false) {
+    init(name: String, type: WorkoutType, isCardio: Bool = false, location: WorkoutLocation = .gym) {
         self.name = name
         self.typeRawValue = type.rawValue
         self.isCardio = isCardio
         self.suggestedNextWeight = nil
         self.shouldIncreaseWeight = false
         self.targetMuscleRawValues = MuscleCatalog.defaultTargets(for: name, type: type, isCardio: isCardio).map(\.rawValue).sorted()
+        self.locationRawValue = location.rawValue
     }
 }
 
@@ -227,7 +258,7 @@ class ExerciseSession {
     var machineSettings: String
     var totalSets: Int
     var notes: String
-    var locationRawValue: String = WorkoutLocation.planetFitness.rawValue
+    var locationRawValue: String = WorkoutLocation.gym.rawValue
     
     // Cardio Specific Metrics
     var warmUpTime: Double?
@@ -239,14 +270,14 @@ class ExerciseSession {
     var exercise: Exercise?
 
     var location: WorkoutLocation {
-        get { WorkoutLocation(rawValue: locationRawValue) ?? .planetFitness }
+        get { WorkoutLocation.from(stored: locationRawValue) }
         set { locationRawValue = newValue.rawValue }
     }
     
     @Relationship(deleteRule: .cascade, inverse: \LoggedSet.session)
     var sets: [LoggedSet] = []
     
-    init(date: Date, machineSettings: String, totalSets: Int, notes: String = "", location: WorkoutLocation = .planetFitness, warmUpTime: Double? = nil, runningTime: Double? = nil, coolDownTime: Double? = nil, runningSpeed: Double? = nil, intensityRating: Int? = nil) {
+    init(date: Date, machineSettings: String, totalSets: Int, notes: String = "", location: WorkoutLocation = .gym, warmUpTime: Double? = nil, runningTime: Double? = nil, coolDownTime: Double? = nil, runningSpeed: Double? = nil, intensityRating: Int? = nil) {
         self.date = date
         self.machineSettings = machineSettings
         self.totalSets = totalSets

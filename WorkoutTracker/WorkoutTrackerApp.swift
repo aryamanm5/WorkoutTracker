@@ -11,6 +11,9 @@ struct WorkoutTrackerApp: App {
     init() {
         do {
             container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self, ProgressPhoto.self)
+            #if DEBUG
+            resetDataIfRequested(context: container.mainContext)
+            #endif
             seedInitialData(context: container.mainContext)
             mergeDuplicateExercises(context: container.mainContext)
             migrateMuscleTargetsIfNeeded(context: container.mainContext)
@@ -36,13 +39,26 @@ struct WorkoutTrackerApp: App {
     }
     
     #if DEBUG
+    /// Wipes the store when launched with `-resetData 1` so UI tests always
+    /// start from a known state regardless of what earlier runs logged.
+    private func resetDataIfRequested(context: ModelContext) {
+        guard UserDefaults.standard.bool(forKey: "resetData") else { return }
+        try? context.delete(model: LoggedSet.self)
+        try? context.delete(model: ExerciseSession.self)
+        try? context.delete(model: Exercise.self)
+        try? context.delete(model: WorkoutDay.self)
+        try? context.delete(model: BodyWeightEntry.self)
+        try? context.delete(model: ProgressPhoto.self)
+        try? context.save()
+    }
+
     /// Seeds sample sessions when launched with `-demoSeed 1` so screens with
     /// history (tracking, charts, calendar) can be exercised in the simulator.
     private func seedDemoDataIfRequested(context: ModelContext) {
         guard UserDefaults.standard.bool(forKey: "demoSeed") else { return }
         let sessionCount = (try? context.fetchCount(FetchDescriptor<ExerciseSession>())) ?? 0
         guard sessionCount == 0,
-              let exercises = try? context.fetch(FetchDescriptor<Exercise>()) else { return }
+              let exercises = try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)])) else { return }
 
         let calendar = Calendar.current
         for (index, exercise) in exercises.prefix(8).enumerated() {
@@ -52,7 +68,7 @@ struct WorkoutTrackerApp: App {
             for (sessionIndex, daysAgo) in schedule.enumerated() {
                 let date = calendar.date(byAdding: .day, value: -daysAgo, to: Date())!
                     .addingTimeInterval(Double(index) * 600)
-                let session = ExerciseSession(date: date, machineSettings: "Seat 4", totalSets: 3)
+                let session = ExerciseSession(date: date, machineSettings: "Seat 4", totalSets: 3, location: exercise.location)
                 context.insert(session)
                 session.exercise = exercise
 
@@ -90,7 +106,8 @@ struct WorkoutTrackerApp: App {
 
     /// Earlier CSV imports created a duplicate Exercise per imported row.
     /// Merge exercises that share a name (case-insensitive) into one,
-    /// moving their sessions over before deleting the extras.
+    /// moving their sessions over before deleting the extras. Home and gym
+    /// libraries are separate, so the same name may exist once per location.
     private func mergeDuplicateExercises(context: ModelContext) {
         guard let exercises = try? context.fetch(FetchDescriptor<Exercise>()) else { return }
 
@@ -98,7 +115,7 @@ struct WorkoutTrackerApp: App {
         var duplicates: [Exercise] = []
 
         for exercise in exercises.sorted(by: { $0.sessions.count > $1.sessions.count }) {
-            let key = exercise.name.lowercased()
+            let key = "\(exercise.name.lowercased())|\(exercise.location.rawValue)"
             if let keeper = keepers[key] {
                 for session in exercise.sessions {
                     session.exercise = keeper
@@ -161,7 +178,15 @@ struct WorkoutTrackerApp: App {
                 Exercise(name: "Leg Extensions", type: .legs),
                 Exercise(name: "Calf Raises", type: .legs),
                 Exercise(name: "Hip Abductors", type: .legs),
-                Exercise(name: "Hip Adductors", type: .legs)
+                Exercise(name: "Hip Adductors", type: .legs),
+
+                // Home library (separate from the gym's)
+                Exercise(name: "Push Ups", type: .push, location: .home),
+                Exercise(name: "Dumbbell Shoulder Press", type: .push, location: .home),
+                Exercise(name: "Dumbbell Rows", type: .pull, location: .home),
+                Exercise(name: "Dumbbell Curls", type: .pull, location: .home),
+                Exercise(name: "Goblet Squats", type: .legs, location: .home),
+                Exercise(name: "Lunges", type: .legs, location: .home)
             ]
             for exercise in exercises {
                 context.insert(exercise)
