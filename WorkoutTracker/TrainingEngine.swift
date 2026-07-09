@@ -70,8 +70,6 @@ enum TrainingEngine {
     struct SplitRecommendation {
         let type: WorkoutType
         let reason: String
-        /// Average fatigue of the focus muscles (0 = fully fresh).
-        let readiness: Double
     }
 
     /// Recommends today's focus from a fixed weekly split (Push Mon/Thu,
@@ -99,8 +97,7 @@ enum TrainingEngine {
         if scheduled == .rest {
             return SplitRecommendation(
                 type: .rest,
-                reason: "Sunday is your scheduled rest day — recover up for the week ahead.",
-                readiness: 0
+                reason: "Sunday is your scheduled rest day — recover up for the week ahead."
             )
         }
 
@@ -115,16 +112,14 @@ enum TrainingEngine {
             if let alternative, averageFatigue(for: alternative) < scheduledFatigue - 0.2 {
                 return SplitRecommendation(
                     type: alternative,
-                    reason: "Your \(scheduled.rawValue.lowercased()) muscles are still recovering, so today swap to \(alternative.rawValue.lowercased()) — \(focusSummary(for: alternative).lowercased()) are fresher.",
-                    readiness: averageFatigue(for: alternative)
+                    reason: "Your \(scheduled.rawValue.lowercased()) muscles are still recovering, so today swap to \(alternative.rawValue.lowercased()) — \(focusSummary(for: alternative).lowercased()) are fresher."
                 )
             }
         }
 
         return SplitRecommendation(
             type: scheduled,
-            reason: "\(focusSummary(for: scheduled)) — today's scheduled \(scheduled.rawValue.lowercased()) day.",
-            readiness: scheduledFatigue
+            reason: "\(focusSummary(for: scheduled)) — today's scheduled \(scheduled.rawValue.lowercased()) day."
         )
     }
 
@@ -158,18 +153,18 @@ enum TrainingEngine {
         isIsolation(exercise.name) ? 2.5 : 5.0
     }
 
+    /// Assisted moves (assisted pull-up/dip/chin-up) load the machine's help,
+    /// so more weight means an *easier* set. Progression runs in reverse.
+    static func isAssisted(_ name: String) -> Bool {
+        name.lowercased().contains("assist")
+    }
+
     /// Small single-joint moves where a 5 lb jump is a huge relative leap.
     static func isIsolation(_ name: String) -> Bool {
         let n = name.lowercased()
         return ["curl", "raise", "lateral", "fly", "flye", "extension", "pushdown",
                 "kickback", "face pull", "shrug", "calf", "adductor", "abductor",
                 "crunch", "oblique", "wrist", "forearm"]
-            .contains { n.contains($0) }
-    }
-
-    static func isCompound(_ name: String) -> Bool {
-        let n = name.lowercased()
-        return ["bench", "squat", "deadlift", "press", "row", "pull up", "pullup", "pull-up", "dip"]
             .contains { n.contains($0) }
     }
 
@@ -206,6 +201,32 @@ enum TrainingEngine {
         let avgDifficulty = Double(lastSession.sets.map(\.difficulty).reduce(0, +)) / Double(lastSession.sets.count)
         let jump = weightIncrement(for: exercise)
 
+        // Assisted lifts run backwards: the "weight" is machine help, so getting
+        // stronger means *removing* it. Never advise adding load here.
+        if isAssisted(exercise.name) {
+            let readyToProgress = minReps >= 10 || (minReps >= 8 && avgDifficulty <= 4.0)
+            if readyToProgress {
+                let next = max(0, top - jump)
+                if next < top {
+                    return ProgressionAdvice(
+                        kind: .decrease,
+                        weight: next,
+                        reason: "You cleared \(formatWeight(top)) lb of assist for \(minReps)+ reps — drop to \(formatWeight(next)) lb to make it harder."
+                    )
+                }
+                return ProgressionAdvice(
+                    kind: .hold,
+                    weight: top,
+                    reason: "You're barely using the assist — try \(exercise.name) unassisted next time."
+                )
+            }
+            return ProgressionAdvice(
+                kind: .hold,
+                weight: top,
+                reason: "Hold \(formatWeight(top)) lb of assist — own 8+ clean reps every set, then we take some off."
+            )
+        }
+
         // How many recent sessions in a row topped out at this same weight,
         // and how many of those were grinders (avg effort ≥ 4.5).
         var sameWeightStreak = 0
@@ -235,21 +256,25 @@ enum TrainingEngine {
             }
         }
 
-        // Higher-rep work done for just a couple sets: reps hit matters more
-        // than set count. 10+ reps always earns a bump; 8-9 reps (the default
-        // target) earns it when the effort was moderate or easier.
-        if minReps >= 10 {
+        // Double progression, the best-evidenced rule for when to add load:
+        // work an 8–12 rep range and only add weight once every set clears the
+        // top of it. Research on reps-in-reserve shows 1–2 RIR (a "hard" but
+        // not all-out set) drives the same gains as grinding to failure with far
+        // less fatigue — so clearing the top of the range on a Hard-or-easier
+        // session (avg effort ≤ 4/5, i.e. ~1–2 RIR) earns the bump. Only a true
+        // grinder (≥ 4.5, caught below) holds you at the weight.
+        if minReps >= 12 {
             return ProgressionAdvice(
                 kind: .increase,
                 weight: top + jump,
-                reason: "You handled \(formatWeight(top)) lb for \(minReps)+ reps — go up \(formatWeight(jump)) lb."
+                reason: "You topped the rep range at \(formatWeight(top)) lb for \(minReps) reps — go up \(formatWeight(jump)) lb."
             )
         }
-        if minReps >= 8 && avgDifficulty <= 3.0 {
+        if minReps >= 8 && avgDifficulty <= 4.0 {
             return ProgressionAdvice(
                 kind: .increase,
                 weight: top + jump,
-                reason: "\(formatWeight(top)) lb for \(minReps) reps with effort to spare — go up \(formatWeight(jump)) lb."
+                reason: "\(formatWeight(top)) lb for \(minReps) reps with 1–2 in reserve — go up \(formatWeight(jump)) lb."
             )
         }
 
@@ -403,8 +428,6 @@ enum TrainingEngine {
     // MARK: - Formatting helpers
 
     static func formatWeight(_ weight: Double) -> String {
-        weight.truncatingRemainder(dividingBy: 1) == 0
-            ? String(format: "%.0f", weight)
-            : String(format: "%.1f", weight)
+        weight.formatted()
     }
 }

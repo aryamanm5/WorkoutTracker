@@ -81,13 +81,12 @@ struct DayDetailView: View {
         let strength = sessions.filter { $0.exercise?.isCardio != true }
         let cardio = sessions.filter { $0.exercise?.isCardio == true }
         let sets = strength.reduce(0) { $0 + $1.sets.count }
-        let volume = TrainingEngine.totalVolume(sessions: strength)
 
         return HStack(spacing: 12) {
             StatTile(icon: "dumbbell.fill", iconColor: .appAccent, value: "\(strength.count)", label: "Strength")
             StatTile(icon: "figure.run", iconColor: .appCardio, value: "\(cardio.count)", label: "Cardio")
             StatTile(icon: "square.stack.3d.up.fill", iconColor: .appSuccess,
-                     value: volume > 0 ? "\(sets)" : "\(sets)", label: "Sets")
+                     value: "\(sets)", label: "Sets")
         }
     }
 }

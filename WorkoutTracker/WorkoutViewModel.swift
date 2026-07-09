@@ -20,10 +20,6 @@ class WorkoutViewModel {
         return exercise.sessions.contains { Calendar.current.isDate($0.date, inSameDayAs: today) }
     }
     
-    func getPreviousSession(for exercise: Exercise) -> ExerciseSession? {
-        return exercise.sessions.sorted { $0.date > $1.date }.first
-    }
-    
     func processMissingDays(context: ModelContext) {
         let descriptor = FetchDescriptor<WorkoutDay>(sortBy: [SortDescriptor(\.date, order: .reverse)])
         let today = Calendar.current.startOfDay(for: Date())

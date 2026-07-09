@@ -140,10 +140,33 @@ struct BodyWeightView: View {
                         .foregroundStyle(Color.appCardio)
                         .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
                         .interpolationMethod(.catmullRom)
+
+                        PointMark(
+                            x: .value("Date", entry.date),
+                            y: .value("Weight", entry.weight)
+                        )
+                        .foregroundStyle(Color.appCardio)
+                        .symbolSize(18)
                     }
                     .chartYScale(domain: weightDomain)
-                    .chartXAxis(.hidden)
-                    .frame(height: 110)
+                    .chartYAxis {
+                        AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
+                            AxisGridLine().foregroundStyle(themeManager.cardBorder.opacity(0.4))
+                            AxisValueLabel {
+                                if let w = value.as(Double.self) {
+                                    Text("\(Int(w))")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(themeManager.secondaryText)
+                                }
+                            }
+                        }
+                    }
+                    .chartXAxis {
+                        AxisMarks(values: .automatic(desiredCount: 3)) { _ in
+                            AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+                        }
+                    }
+                    .frame(height: 130)
                 }
 
                 Text("Logged \(latest.date.formatted(.relative(presentation: .named)))")
@@ -217,29 +240,43 @@ struct BodyWeightView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            // Last 14 days
+            // Scrollable history, newest on the right. ponytail: capped at 60
+            // days back — bump `historyDays` if you need to back-date further.
             let calendar = Calendar.current
-            HStack(spacing: 5) {
-                ForEach(0..<14, id: \.self) { offset in
-                    let day = calendar.date(byAdding: .day, value: offset - 13, to: calendar.startOfDay(for: Date()))!
-                    VStack(spacing: 3) {
-                        Circle()
-                            .fill(tookCreatine(on: day) ? Color.appCreatine : themeManager.inputBackground)
-                            .frame(height: 14)
-                            .overlay(
-                                Circle().stroke(offset == 13 ? Color.appAccent : .clear, lineWidth: 1.5)
-                            )
-                        Text(day.formatted(.dateTime.weekday(.narrow)))
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(themeManager.secondaryText)
+            let historyDays = 60
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(0..<historyDays, id: \.self) { offset in
+                            let day = calendar.date(byAdding: .day, value: offset - (historyDays - 1), to: calendar.startOfDay(for: Date()))!
+                            let isToday = offset == historyDays - 1
+                            VStack(spacing: 3) {
+                                Text(day.formatted(.dateTime.day()))
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(themeManager.secondaryText)
+                                Circle()
+                                    .fill(tookCreatine(on: day) ? Color.appCreatine : themeManager.inputBackground)
+                                    .frame(width: 18, height: 18)
+                                    .overlay(
+                                        Circle().stroke(isToday ? Color.appAccent : .clear, lineWidth: 1.5)
+                                    )
+                                Text(day.formatted(.dateTime.weekday(.narrow)))
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(themeManager.secondaryText)
+                            }
+                            .frame(width: 26)
+                            .id(offset)
+                            .onTapGesture {
+                                updateCreatineStatus(on: day, took: !tookCreatine(on: day), context: context, days: workoutDays)
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            }
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .onTapGesture {
-                        updateCreatineStatus(on: day, took: !tookCreatine(on: day), context: context, days: workoutDays)
-                    }
+                    .padding(.vertical, 2)
                 }
+                .onAppear { proxy.scrollTo(historyDays - 1, anchor: .trailing) }
             }
-            Text("Tap any day to fix your history.")
+            Text("Scroll back and tap any day to fix your history.")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(themeManager.secondaryText)
         }

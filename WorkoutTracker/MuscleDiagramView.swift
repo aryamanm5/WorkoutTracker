@@ -237,7 +237,6 @@ struct MuscleDiagramView: View {
     var intensities: [TargetMuscle: Double] = [:]
     var selectedMuscles: Binding<Set<TargetMuscle>>?
     var isEditable: Bool = false
-    var showsLegend: Bool = true
 
     @EnvironmentObject var themeManager: ThemeManager
 
@@ -249,9 +248,7 @@ struct MuscleDiagramView: View {
             }
             .padding(.horizontal, 8)
 
-            if showsLegend {
-                legend
-            }
+            legend
         }
     }
 

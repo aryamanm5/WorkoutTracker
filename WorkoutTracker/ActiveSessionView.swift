@@ -264,10 +264,12 @@ struct ExercisePreviewView: View {
     /// view for the logger in place, so finishing pops straight to the queue.
     @State private var started = false
 
-    private var lastSession: ExerciseSession? {
-        exercise.sessions
+    /// The two most recent real sessions, newest first.
+    private var recentSessions: [ExerciseSession] {
+        Array(exercise.sessions
             .filter { exercise.isCardio || !$0.sets.isEmpty }
-            .max(by: { $0.date < $1.date })
+            .sorted { $0.date > $1.date }
+            .prefix(2))
     }
 
     private var advice: TrainingEngine.ProgressionAdvice? {
@@ -362,61 +364,75 @@ struct ExercisePreviewView: View {
 
     @ViewBuilder
     private var lastTimeCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                SectionKicker(text: "Last Time")
-                Spacer()
-                if let last = lastSession {
-                    ChipLabel(text: last.date.formatted(.dateTime.month(.abbreviated).day()), color: .appCardio)
-                }
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            SectionKicker(text: recentSessions.count > 1 ? "Last Two Sessions" : "Last Time")
 
-            if let last = lastSession {
-                if exercise.isCardio {
-                    lastCardioRows(last)
-                } else {
-                    ForEach(last.sets.sorted { $0.setNumber < $1.setNumber }, id: \.persistentModelID) { set in
-                        HStack(spacing: 12) {
-                            Text("\(set.setNumber)")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                                .frame(width: 26, height: 26)
-                                .background(Color.appAccentSoft)
-                                .foregroundColor(.appAccent)
-                                .clipShape(Circle())
-                            Text("\(set.reps) reps")
-                                .appBodyStyle()
-                                .foregroundColor(themeManager.primaryText)
-                            if set.weight > 0 {
-                                Text("@ \(TrainingEngine.formatWeight(set.weight)) lb")
-                                    .appBodyStyle()
-                                    .foregroundColor(themeManager.secondaryText)
-                            }
-                            Spacer()
-                            DifficultyDots(rating: set.difficulty, size: 8)
-                        }
-                    }
-                }
-                if !last.machineSettings.isEmpty {
-                    Divider()
-                    Label(last.machineSettings, systemImage: "gearshape.fill")
-                        .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
-                }
-                if !last.notes.isEmpty {
-                    Text("“\(last.notes)”")
-                        .appCaptionStyle()
-                        .italic()
-                        .foregroundColor(themeManager.secondaryText)
-                }
-            } else {
+            if recentSessions.isEmpty {
                 Text("First time doing \(exercise.name) at \(location.rawValue.lowercased() == "home" ? "home" : location.rawValue) — log it and the coach takes over from here.")
                     .appBodyStyle()
                     .foregroundColor(themeManager.secondaryText)
+            } else {
+                ForEach(Array(recentSessions.enumerated()), id: \.element.persistentModelID) { index, session in
+                    if index > 0 { Divider() }
+                    sessionBlock(session)
+                }
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard()
+    }
+
+    @ViewBuilder
+    private func sessionBlock(_ session: ExerciseSession) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(session.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                    .appCaptionStyle()
+                    .fontWeight(.semibold)
+                    .foregroundColor(themeManager.primaryText)
+                Spacer()
+                Text(session.date.formatted(.relative(presentation: .named)))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(themeManager.secondaryText)
+            }
+
+            if exercise.isCardio {
+                lastCardioRows(session)
+            } else {
+                ForEach(session.sets.sorted { $0.setNumber < $1.setNumber }, id: \.persistentModelID) { set in
+                    HStack(spacing: 12) {
+                        Text("\(set.setNumber)")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .frame(width: 26, height: 26)
+                            .background(Color.appAccentSoft)
+                            .foregroundColor(.appAccent)
+                            .clipShape(Circle())
+                        Text("\(set.reps) reps")
+                            .appBodyStyle()
+                            .foregroundColor(themeManager.primaryText)
+                        if set.weight > 0 {
+                            Text("@ \(TrainingEngine.formatWeight(set.weight)) lb")
+                                .appBodyStyle()
+                                .foregroundColor(themeManager.secondaryText)
+                        }
+                        Spacer()
+                        DifficultyDots(rating: set.difficulty, size: 8)
+                    }
+                }
+            }
+            if !session.machineSettings.isEmpty {
+                Label(session.machineSettings, systemImage: "gearshape.fill")
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+            if !session.notes.isEmpty {
+                Text("“\(session.notes)”")
+                    .appCaptionStyle()
+                    .italic()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+        }
     }
 
     @ViewBuilder
@@ -505,8 +521,10 @@ struct ExerciseLoggerView: View {
     @State private var sessionNotes = ""
     @State private var location: WorkoutLocation = .gym
     @State private var lastSetSavedAt: Date?
-    @State private var restRemaining = 0
-    @State private var restTimerTask: Task<Void, Never>?
+    // Wall-clock finish time for the rest timer, so it keeps counting while the
+    // app is backgrounded instead of freezing a decrementing counter.
+    @State private var restEndDate: Date?
+    @State private var restNotifyTask: Task<Void, Never>?
     @State private var pendingConfirmAction: WeightConfirmAction?
 
     private enum WeightConfirmAction {
@@ -525,7 +543,7 @@ struct ExerciseLoggerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if restRemaining > 0 {
+                if restEndDate != nil {
                     restCountdownCard
                 }
 
@@ -557,7 +575,7 @@ struct ExerciseLoggerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .dismissableKeyboard()
         .onAppear(perform: prefill)
-        .onDisappear { restTimerTask?.cancel() }
+        .onDisappear { restNotifyTask?.cancel() }
         .sheet(isPresented: $showingPlates) {
             plateSheet
         }
@@ -590,54 +608,64 @@ struct ExerciseLoggerView: View {
     // MARK: Rest countdown
 
     private var restCountdownCard: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .stroke(Color.appAccentSoft, lineWidth: 5)
-                Circle()
-                    .trim(from: 0, to: CGFloat(restRemaining) / CGFloat(max(restTarget, 1)))
-                    .stroke(Color.appAccent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Text("\(restRemaining)")
-                    .font(.system(size: 16, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.appAccent)
-            }
-            .frame(width: 52, height: 52)
-            .animation(.linear(duration: 1), value: restRemaining)
+        // Drive the display off the wall clock so it stays accurate across
+        // backgrounding — a paused decrementing counter used to freeze here.
+        TimelineView(.periodic(from: Date(), by: 1)) { context in
+            let remaining = restEndDate.map { max(0, Int($0.timeIntervalSince(context.date).rounded(.up))) } ?? 0
+            let done = remaining <= 0
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Resting")
-                    .appHeadingStyle()
-                    .foregroundColor(themeManager.primaryText)
-                Text("Next set when the ring closes")
-                    .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
-            }
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.appAccentSoft, lineWidth: 5)
+                    Circle()
+                        .trim(from: 0, to: done ? 1 : CGFloat(remaining) / CGFloat(max(restTarget, 1)))
+                        .stroke(done ? Color.appSuccess : Color.appAccent,
+                                style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    if done {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundColor(.appSuccess)
+                    } else {
+                        Text("\(remaining)")
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundColor(.appAccent)
+                    }
+                }
+                .frame(width: 52, height: 52)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(done ? "Rest complete" : "Resting")
+                        .appHeadingStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text(done ? "You're recovered — start your next set" : "Next set when the ring closes")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
 
-            Button("Skip") {
-                restTimerTask?.cancel()
-                restRemaining = 0
+                Spacer()
+
+                Button(done ? "Done" : "Skip") {
+                    restNotifyTask?.cancel()
+                    restEndDate = nil
+                }
+                .buttonStyle(QuietButtonStyle())
             }
-            .buttonStyle(QuietButtonStyle())
+            .padding(14)
+            .appCard()
         }
-        .padding(14)
-        .appCard()
     }
 
     private func startRestCountdown() {
-        restTimerTask?.cancel()
-        restRemaining = restTarget
-        restTimerTask = Task {
-            while !Task.isCancelled && restRemaining > 0 {
-                try? await Task.sleep(for: .seconds(1))
-                if !Task.isCancelled {
-                    restRemaining -= 1
-                }
-            }
-            if restRemaining <= 0 {
+        restNotifyTask?.cancel()
+        restEndDate = Date().addingTimeInterval(TimeInterval(restTarget))
+        // Best-effort haptic when the rest ends while the app is in the
+        // foreground; the visual "Rest complete" state covers the rest.
+        restNotifyTask = Task {
+            try? await Task.sleep(for: .seconds(restTarget))
+            if !Task.isCancelled {
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
             }
         }
@@ -1011,7 +1039,7 @@ struct ExerciseLoggerView: View {
     }
 
     private func finish() {
-        restTimerTask?.cancel()
+        restNotifyTask?.cancel()
 
         let session = ExerciseSession(
             date: Date(),
@@ -1079,7 +1107,6 @@ struct ExercisePickerSheet: View {
     @State private var showingCreate = false
     @State private var newName = ""
     @State private var newType: WorkoutType = .push
-    @State private var newIsCardio = false
 
     private var filtered: [Exercise] {
         let atLocation = allExercises.filter { $0.location == location }
@@ -1133,7 +1160,7 @@ struct ExercisePickerSheet: View {
                 Button("Add") {
                     let trimmed = newName.trimmingCharacters(in: .whitespaces)
                     guard !trimmed.isEmpty else { return }
-                    let exercise = Exercise(name: trimmed, type: newType, isCardio: newIsCardio, location: location)
+                    let exercise = Exercise(name: trimmed, type: newType, isCardio: false, location: location)
                     context.insert(exercise)
                     try? context.save()
                     onPick(exercise)

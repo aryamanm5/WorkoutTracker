@@ -370,10 +370,8 @@ struct SettingsView: View {
 
         if !weightEntries.isEmpty {
             csvString.append("\n\nBody Weight History\nDate,Weight(lbs),Notes\n")
-            let fileFormatter = DateFormatter()
-            fileFormatter.dateFormat = "yyyy-MM-dd HH:mm"
             for entry in weightEntries {
-                let dateStr = fileFormatter.string(from: entry.date)
+                let dateStr = formatter.string(from: entry.date)
                 let notes = escapeCSV(entry.notes)
                 csvString.append("\(dateStr),\(entry.weight),\(notes)\n")
             }

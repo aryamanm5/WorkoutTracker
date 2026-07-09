@@ -4,7 +4,6 @@ import SwiftData
 @main
 struct WorkoutTrackerApp: App {
     let container: ModelContainer
-    @State private var router = AppRouter()
     @State private var viewModel = WorkoutViewModel()
     @StateObject private var themeManager = ThemeManager()
 
@@ -28,7 +27,6 @@ struct WorkoutTrackerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(router)
                 .environment(viewModel)
                 .environmentObject(themeManager)
                 .modelContainer(container)

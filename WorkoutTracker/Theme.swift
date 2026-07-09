@@ -5,7 +5,6 @@ internal import Combine
 
 enum AppFontChoice: String, CaseIterable, Identifiable {
     case standard = "Standard"
-    case rounded = "Rounded"
     case serif = "Serif"
 
     var id: String { rawValue }
@@ -13,7 +12,6 @@ enum AppFontChoice: String, CaseIterable, Identifiable {
     var design: Font.Design {
         switch self {
         case .standard: return .default
-        case .rounded: return .rounded
         case .serif: return .serif
         }
     }
@@ -58,11 +56,6 @@ extension Color {
     static let appCardBackground = Color(
         light: .white,
         dark: Color(red: 0.125, green: 0.114, blue: 0.098)
-    )
-    /// Surfaces stacked on top of cards (rows, wells, strips).
-    static let appSecondaryBackground = Color(
-        light: Color(red: 0.937, green: 0.918, blue: 0.890),
-        dark: Color(red: 0.180, green: 0.165, blue: 0.145)
     )
     /// Background for text fields and editors that sit inside cards.
     static let appInputBackground = Color(
@@ -127,18 +120,24 @@ extension Color {
     )
 
     // Heat scale endpoints for recovery / training-intensity displays.
-    static let heatLow = Color(
-        light: Color(red: 0.980, green: 0.792, blue: 0.400),
-        dark: Color(red: 0.788, green: 0.580, blue: 0.180)
-    )
-    static let heatHigh = Color(
-        light: Color(red: 0.851, green: 0.235, blue: 0.157),
-        dark: Color(red: 0.929, green: 0.318, blue: 0.208)
-    )
+    // Kept as concrete per-appearance colors so heat() interpolates on real
+    // RGB. Interpolating the *dynamic* colors resolved them without a trait
+    // context, which collapsed the whole dark scale to one flat color.
+    private static let heatLowLight = Color(red: 0.980, green: 0.792, blue: 0.400)
+    private static let heatLowDark  = Color(red: 0.788, green: 0.580, blue: 0.180)
+    private static let heatHighLight = Color(red: 0.851, green: 0.235, blue: 0.157)
+    private static let heatHighDark  = Color(red: 0.929, green: 0.318, blue: 0.208)
 
-    /// Interpolated heat color for a 0...1 intensity.
+    static let heatLow = Color(light: heatLowLight, dark: heatLowDark)
+    static let heatHigh = Color(light: heatHighLight, dark: heatHighDark)
+
+    /// Interpolated heat color for a 0...1 intensity — correct in both appearances.
     static func heat(_ intensity: Double) -> Color {
-        Color.heatLow.interpolate(to: .heatHigh, fraction: min(max(intensity, 0), 1))
+        let f = min(max(intensity, 0), 1)
+        return Color(
+            light: heatLowLight.interpolate(to: heatHighLight, fraction: f),
+            dark: heatLowDark.interpolate(to: heatHighDark, fraction: f)
+        )
     }
 }
 
@@ -177,21 +176,16 @@ class ThemeManager: ObservableObject {
         }
 
         switch UserDefaults.standard.string(forKey: "selectedFont") {
-        case AppFontChoice.rounded.rawValue:
-            self.selectedFont = .rounded
         case AppFontChoice.serif.rawValue, "Times New Roman":
             self.selectedFont = .serif
         default:
-            self.selectedFont = .rounded
+            self.selectedFont = .standard
         }
     }
 
     var background: Color { .appBackground }
-    var secondaryBackground: Color { .appSecondaryBackground }
     var cardBackground: Color { .appCardBackground }
     var inputBackground: Color { .appInputBackground }
-    var gradientStart: Color { .appGradientStart }
-    var gradientEnd: Color { .appGradientEnd }
     var primaryText: Color { .appPrimaryText }
     var secondaryText: Color { .appSecondaryText }
     var cardBorder: Color { .appCardBorder }
@@ -283,15 +277,14 @@ struct InputModifier: ViewModifier {
 struct ChipLabel: View {
     let text: String
     var color: Color = .appAccent
-    var filled: Bool = false
 
     var body: some View {
         Text(text)
             .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(filled ? .white : color)
+            .foregroundColor(color)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(filled ? color : color.opacity(0.14))
+            .background(color.opacity(0.14))
             .clipShape(Capsule())
     }
 }
