@@ -100,7 +100,6 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 SectionKicker(text: trainedToday ? "Today's Training" : "Coach's Pick")
-                    .foregroundColor(.white.opacity(0.85))
                 Spacer()
                 focusSwitcher
             }
@@ -111,12 +110,12 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(activeFocus == .rest ? "Rest & Recover" : "\(activeFocus.rawValue) Day")
                         .font(.system(size: 32, weight: .heavy, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(.appAccent)
                     Text(focusOverride == nil
                          ? recommendation.reason
                          : "Your call — coach suggested \(recommendation.type.rawValue.lowercased()), but you know your body best.")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
+                        .foregroundColor(themeManager.secondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -129,25 +128,14 @@ struct TodayView: View {
                 } label: {
                     Label(trainedToday ? "Train More" : "Start Training",
                           systemImage: "play.fill")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(.appAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+                .buttonStyle(EmberButtonStyle())
                 .accessibilityIdentifier("startTraining")
             }
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            activeFocus == .rest && !trainedToday
-                ? AnyShapeStyle(Color(light: Color(red: 0.35, green: 0.42, blue: 0.48),
-                                      dark: Color(red: 0.16, green: 0.20, blue: 0.24)))
-                : AnyShapeStyle(LinearGradient.ember)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .appCard()
     }
 
     private var trainedSummary: some View {
@@ -157,13 +145,14 @@ struct TodayView: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 26))
+                    .foregroundColor(.appSuccess)
                 Text("Trained Today")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
+                    .foregroundColor(themeManager.primaryText)
             }
-            .foregroundColor(.white)
             Text("\(names.count) exercise\(names.count == 1 ? "" : "s")\(volume > 0 ? " · \(Int(volume).formatted()) lb moved" : "")")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(themeManager.secondaryText)
         }
     }
 
@@ -183,10 +172,10 @@ struct TodayView: View {
                         Text(loc.rawValue)
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                     }
-                    .foregroundColor(isSelected ? .appAccent : .white)
+                    .foregroundColor(isSelected ? .white : themeManager.secondaryText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 9)
-                    .background(isSelected ? Color.white : Color.white.opacity(0.16))
+                    .background(isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
                     .clipShape(Capsule())
                 }
                 .accessibilityIdentifier("location_\(loc == .home ? "home" : "gym")")
@@ -223,9 +212,9 @@ struct TodayView: View {
         } label: {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 14, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(.appAccent)
                 .padding(8)
-                .background(Color.white.opacity(0.2))
+                .background(Color.appAccentSoft)
                 .clipShape(Circle())
         }
         .accessibilityLabel("Change focus")
@@ -335,7 +324,7 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(taken ? AnyShapeStyle(Color.appCreatine) : AnyShapeStyle(Color.appCreatine.opacity(0.14)))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
 
             Button {
@@ -351,7 +340,7 @@ struct TodayView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
                 .background(Color.appCardio.opacity(0.14))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
         }
     }

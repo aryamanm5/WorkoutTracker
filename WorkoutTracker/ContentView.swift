@@ -30,6 +30,9 @@ struct ContentView: View {
                 }
                 .tag(3)
         }
+        // Rebuild the whole tree when the theme changes so every cached
+        // `Color.app*` provider re-resolves against the new palette instantly.
+        .id(themeManager.theme)
         .tint(Color.appAccent)
         .fontDesign(themeManager.selectedFont.design)
         .preferredColorScheme(themeManager.colorScheme)

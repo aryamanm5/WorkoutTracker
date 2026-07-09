@@ -121,15 +121,26 @@ struct SettingsView: View {
             SectionKicker(text: "Appearance")
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Theme")
+                Text("Dark Mode")
                     .appBodyStyle()
                     .foregroundColor(themeManager.primaryText)
-                Picker("Theme", selection: $themeManager.appearance) {
+                Picker("Dark Mode", selection: $themeManager.appearance) {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(appearance.rawValue).tag(appearance)
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Theme")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.primaryText)
+                HStack(spacing: 10) {
+                    ForEach(AppTheme.allCases) { theme in
+                        themeSwatch(theme)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -147,6 +158,36 @@ struct SettingsView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard()
+    }
+
+    /// Tappable color chip; selecting one instantly re-themes the whole app.
+    private func themeSwatch(_ theme: AppTheme) -> some View {
+        let selected = themeManager.theme == theme
+        return Button {
+            themeManager.theme = theme
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
+            VStack(spacing: 6) {
+                Circle()
+                    .fill(theme.swatchGradient)
+                    .frame(width: 34, height: 34)
+                    .overlay(
+                        Circle().stroke(themeManager.primaryText, lineWidth: selected ? 2.5 : 0)
+                            .padding(-3)
+                    )
+                    .overlay(
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundColor(.white)
+                            .opacity(selected ? 1 : 0)
+                    )
+                Text(theme.displayName)
+                    .font(.system(size: 11, weight: selected ? .bold : .medium))
+                    .foregroundColor(selected ? themeManager.primaryText : themeManager.secondaryText)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Privacy

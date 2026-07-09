@@ -37,9 +37,12 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Ember palette
-// Warm charcoal surfaces with an ember-orange identity. Every color is
-// adaptive so views render correctly in both appearances.
+// MARK: - Global theme system
+// Every surface color comes from the *selected* theme's palette. Colors are
+// exposed as computed `static var`s whose UIColor providers read
+// `AppTheme.current` at resolve time, so re-rendering the tree (which the app
+// forces on theme change via `.id`) instantly repaints the whole app. Neutrals
+// and accents each have a distinct light/dark palette per theme.
 
 extension Color {
     /// A color that automatically resolves for the current light/dark appearance.
@@ -49,105 +52,167 @@ extension Color {
         })
     }
 
-    static let appBackground = Color(
-        light: Color(red: 0.969, green: 0.953, blue: 0.929),
-        dark: Color(red: 0.071, green: 0.063, blue: 0.055)
-    )
-    static let appCardBackground = Color(
-        light: .white,
-        dark: Color(red: 0.125, green: 0.114, blue: 0.098)
-    )
-    /// Background for text fields and editors that sit inside cards.
-    static let appInputBackground = Color(
-        light: Color(red: 0.937, green: 0.918, blue: 0.890),
-        dark: Color(red: 0.196, green: 0.180, blue: 0.157)
-    )
-    static let appPrimaryText = Color(
-        light: Color(red: 0.110, green: 0.098, blue: 0.086),
-        dark: Color(red: 0.973, green: 0.957, blue: 0.937)
-    )
-    static let appSecondaryText = Color(
-        light: Color(red: 0.478, green: 0.443, blue: 0.408),
-        dark: Color(red: 0.655, green: 0.616, blue: 0.573)
-    )
-    static let appCardBorder = Color(
-        light: Color(red: 0.882, green: 0.855, blue: 0.816),
-        dark: Color(red: 0.216, green: 0.196, blue: 0.173)
-    )
-    static let appCardShadow = Color(
-        light: Color.black.opacity(0.07),
-        dark: Color.black.opacity(0.0)
-    )
-
-    // Identity
-    static let appAccent = Color(
-        light: Color(red: 0.902, green: 0.380, blue: 0.141),
-        dark: Color(red: 1.0, green: 0.478, blue: 0.216)
-    )
-    static let appAccentSoft = Color(
-        light: Color(red: 0.902, green: 0.380, blue: 0.141).opacity(0.14),
-        dark: Color(red: 1.0, green: 0.478, blue: 0.216).opacity(0.18)
-    )
-    static let appGradientStart = Color(
-        light: Color(red: 0.945, green: 0.416, blue: 0.161),
-        dark: Color(red: 0.871, green: 0.349, blue: 0.133)
-    )
-    static let appGradientEnd = Color(
-        light: Color(red: 0.980, green: 0.616, blue: 0.204),
-        dark: Color(red: 0.949, green: 0.522, blue: 0.153)
-    )
-
-    // Semantic
-    static let appSuccess = Color(
-        light: Color(red: 0.325, green: 0.596, blue: 0.361),
-        dark: Color(red: 0.463, green: 0.749, blue: 0.494)
-    )
-    static let appWarning = Color(
-        light: Color(red: 0.855, green: 0.588, blue: 0.129),
-        dark: Color(red: 0.949, green: 0.702, blue: 0.251)
-    )
-    static let appDanger = Color(
-        light: Color(red: 0.788, green: 0.259, blue: 0.212),
-        dark: Color(red: 0.906, green: 0.416, blue: 0.365)
-    )
-    static let appCardio = Color(
-        light: Color(red: 0.173, green: 0.494, blue: 0.635),
-        dark: Color(red: 0.365, green: 0.678, blue: 0.816)
-    )
-    static let appCreatine = Color(
-        light: Color(red: 0.325, green: 0.596, blue: 0.361),
-        dark: Color(red: 0.463, green: 0.749, blue: 0.494)
-    )
-
-    // Heat scale endpoints for recovery / training-intensity displays.
-    // Kept as concrete per-appearance colors so heat() interpolates on real
-    // RGB. Interpolating the *dynamic* colors resolved them without a trait
-    // context, which collapsed the whole dark scale to one flat color.
-    private static let heatLowLight = Color(red: 0.980, green: 0.792, blue: 0.400)
-    private static let heatLowDark  = Color(red: 0.788, green: 0.580, blue: 0.180)
-    private static let heatHighLight = Color(red: 0.851, green: 0.235, blue: 0.157)
-    private static let heatHighDark  = Color(red: 0.929, green: 0.318, blue: 0.208)
-
-    static let heatLow = Color(light: heatLowLight, dark: heatLowDark)
-    static let heatHigh = Color(light: heatHighLight, dark: heatHighDark)
-
-    /// Interpolated heat color for a 0...1 intensity — correct in both appearances.
-    static func heat(_ intensity: Double) -> Color {
-        let f = min(max(intensity, 0), 1)
-        return Color(
-            light: heatLowLight.interpolate(to: heatHighLight, fraction: f),
-            dark: heatLowDark.interpolate(to: heatHighDark, fraction: f)
+    init(hex: UInt) {
+        self.init(
+            red: Double((hex >> 16) & 0xff) / 255,
+            green: Double((hex >> 8) & 0xff) / 255,
+            blue: Double(hex & 0xff) / 255
         )
     }
 }
 
-/// The signature ember gradient used for hero surfaces and primary CTAs.
+/// One fully-resolved set of colors for a single (theme, appearance) pair.
+struct Palette {
+    let background, card, input, primaryText, secondaryText, border: Color
+    let accent, gradientStart, gradientEnd: Color
+    let success, warning, danger, cardio, creatine: Color
+    let heatLow, heatHigh: Color
+}
+
+enum AppTheme: String, CaseIterable, Identifiable {
+    case orange, blue, green, purple
+
+    var id: String { rawValue }
+    var displayName: String { rawValue.capitalized }
+
+    /// The live selection every color provider reads. Kept in sync by
+    /// `ThemeManager`; seeded from storage so first paint is correct.
+    static var current: AppTheme =
+        AppTheme(rawValue: UserDefaults.standard.string(forKey: "appTheme") ?? "") ?? .orange
+
+    func palette(dark: Bool) -> Palette { dark ? darkPalette : lightPalette }
+
+    /// Accent gradient for the Settings theme picker swatch.
+    var swatchGradient: LinearGradient {
+        let p = lightPalette
+        return LinearGradient(colors: [p.gradientStart, p.gradientEnd],
+                              startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var lightPalette: Palette {
+        switch self {
+        case .orange:
+            return Palette(background: Color(hex: 0xF7F3ED), card: .white, input: Color(hex: 0xEFEAE3),
+                           primaryText: Color(hex: 0x1C1916), secondaryText: Color(hex: 0x7A7169), border: Color(hex: 0xE1DAD0),
+                           accent: Color(hex: 0xE66124), gradientStart: Color(hex: 0xF16A29), gradientEnd: Color(hex: 0xFA9D34),
+                           success: Color(hex: 0x539A5C), warning: Color(hex: 0xDA9621), danger: Color(hex: 0xC94236),
+                           cardio: Color(hex: 0x2C7EA2), creatine: Color(hex: 0x539A5C),
+                           heatLow: Color(hex: 0xFACA66), heatHigh: Color(hex: 0xD93C28))
+        case .blue:
+            return Palette(background: Color(hex: 0xF1F4F9), card: .white, input: Color(hex: 0xE7ECF3),
+                           primaryText: Color(hex: 0x161A20), secondaryText: Color(hex: 0x6B7482), border: Color(hex: 0xD6DEE8),
+                           accent: Color(hex: 0x2F6FE0), gradientStart: Color(hex: 0x3A79E8), gradientEnd: Color(hex: 0x4FA8F5),
+                           success: Color(hex: 0x3FA85C), warning: Color(hex: 0xDA9621), danger: Color(hex: 0xC94236),
+                           cardio: Color(hex: 0x17A2B8), creatine: Color(hex: 0x3FA85C),
+                           heatLow: Color(hex: 0xAEC8F5), heatHigh: Color(hex: 0x12439E))
+        case .green:
+            return Palette(background: Color(hex: 0xF0F5F0), card: .white, input: Color(hex: 0xE6EFE7),
+                           primaryText: Color(hex: 0x141A15), secondaryText: Color(hex: 0x6A756C), border: Color(hex: 0xD5E0D6),
+                           accent: Color(hex: 0x2E9E58), gradientStart: Color(hex: 0x33A860), gradientEnd: Color(hex: 0x5FC77E),
+                           success: Color(hex: 0x2E8B57), warning: Color(hex: 0xDA9621), danger: Color(hex: 0xC94236),
+                           cardio: Color(hex: 0x2C86A2), creatine: Color(hex: 0x2E8B57),
+                           heatLow: Color(hex: 0xA7DCB6), heatHigh: Color(hex: 0x12703A))
+        case .purple:
+            return Palette(background: Color(hex: 0xF4F1F8), card: .white, input: Color(hex: 0xEBE7F3),
+                           primaryText: Color(hex: 0x19161F), secondaryText: Color(hex: 0x726B82), border: Color(hex: 0xDDD6E8),
+                           accent: Color(hex: 0x7C4DDB), gradientStart: Color(hex: 0x8657E0), gradientEnd: Color(hex: 0xA87BF0),
+                           success: Color(hex: 0x539A5C), warning: Color(hex: 0xDA9621), danger: Color(hex: 0xC94236),
+                           cardio: Color(hex: 0x2C88A2), creatine: Color(hex: 0x539A5C),
+                           heatLow: Color(hex: 0xC9B4F2), heatHigh: Color(hex: 0x5B2C9E))
+        }
+    }
+
+    private var darkPalette: Palette {
+        switch self {
+        case .orange:
+            return Palette(background: Color(hex: 0x121110), card: Color(hex: 0x201D19), input: Color(hex: 0x322E28),
+                           primaryText: Color(hex: 0xF8F4EF), secondaryText: Color(hex: 0xA79D92), border: Color(hex: 0x373230),
+                           accent: Color(hex: 0xFF7A37), gradientStart: Color(hex: 0xDE5922), gradientEnd: Color(hex: 0xF28527),
+                           success: Color(hex: 0x76BF7E), warning: Color(hex: 0xF2B340), danger: Color(hex: 0xE76A5D),
+                           cardio: Color(hex: 0x5DADD0), creatine: Color(hex: 0x76BF7E),
+                           heatLow: Color(hex: 0xC99430), heatHigh: Color(hex: 0xED5135))
+        case .blue:
+            return Palette(background: Color(hex: 0x0E1116), card: Color(hex: 0x191D24), input: Color(hex: 0x262C36),
+                           primaryText: Color(hex: 0xF1F4F8), secondaryText: Color(hex: 0x97A1B0), border: Color(hex: 0x2E3641),
+                           accent: Color(hex: 0x5A93F2), gradientStart: Color(hex: 0x2E6AD6), gradientEnd: Color(hex: 0x4B9BF0),
+                           success: Color(hex: 0x5FBE77), warning: Color(hex: 0xF2B340), danger: Color(hex: 0xE76A5D),
+                           cardio: Color(hex: 0x30BACC), creatine: Color(hex: 0x5FBE77),
+                           heatLow: Color(hex: 0x3D6BC0), heatHigh: Color(hex: 0x79A7F2))
+        case .green:
+            return Palette(background: Color(hex: 0x0E120F), card: Color(hex: 0x181D19), input: Color(hex: 0x252C26),
+                           primaryText: Color(hex: 0xF0F5F0), secondaryText: Color(hex: 0x96A198), border: Color(hex: 0x2D352E),
+                           accent: Color(hex: 0x46B26F), gradientStart: Color(hex: 0x2E9455), gradientEnd: Color(hex: 0x58BE78),
+                           success: Color(hex: 0x5FBE77), warning: Color(hex: 0xF2B340), danger: Color(hex: 0xE76A5D),
+                           cardio: Color(hex: 0x4FB0CC), creatine: Color(hex: 0x5FBE77),
+                           heatLow: Color(hex: 0x357A4E), heatHigh: Color(hex: 0x74C78C))
+        case .purple:
+            return Palette(background: Color(hex: 0x110E16), card: Color(hex: 0x1C1924), input: Color(hex: 0x2A2636),
+                           primaryText: Color(hex: 0xF4F1F8), secondaryText: Color(hex: 0xA197B0), border: Color(hex: 0x352E41),
+                           accent: Color(hex: 0xA07AF2), gradientStart: Color(hex: 0x6E4AD6), gradientEnd: Color(hex: 0x9B6DF0),
+                           success: Color(hex: 0x76BF7E), warning: Color(hex: 0xF2B340), danger: Color(hex: 0xE76A5D),
+                           cardio: Color(hex: 0x5DADD0), creatine: Color(hex: 0x76BF7E),
+                           heatLow: Color(hex: 0x6244A0), heatHigh: Color(hex: 0x9E7AF2))
+        }
+    }
+}
+
+extension Color {
+    /// Dynamic color that resolves for both the current appearance *and* the
+    /// live theme selection. Recomputed each time a view body reads it.
+    private static func themed(_ key: KeyPath<Palette, Color>) -> Color {
+        Color(uiColor: UIColor { traits in
+            let palette = AppTheme.current.palette(dark: traits.userInterfaceStyle == .dark)
+            return UIColor(palette[keyPath: key])
+        })
+    }
+
+    static var appBackground: Color { themed(\.background) }
+    static var appCardBackground: Color { themed(\.card) }
+    static var appInputBackground: Color { themed(\.input) }
+    static var appPrimaryText: Color { themed(\.primaryText) }
+    static var appSecondaryText: Color { themed(\.secondaryText) }
+    static var appCardBorder: Color { themed(\.border) }
+    static var appCardShadow: Color {
+        Color(light: Color.black.opacity(0.06), dark: Color.black.opacity(0.0))
+    }
+
+    // Identity
+    static var appAccent: Color { themed(\.accent) }
+    static var appAccentSoft: Color { appAccent.opacity(0.15) }
+    static var appGradientStart: Color { themed(\.gradientStart) }
+    static var appGradientEnd: Color { themed(\.gradientEnd) }
+
+    // Semantic
+    static var appSuccess: Color { themed(\.success) }
+    static var appWarning: Color { themed(\.warning) }
+    static var appDanger: Color { themed(\.danger) }
+    static var appCardio: Color { themed(\.cardio) }
+    static var appCreatine: Color { themed(\.creatine) }
+
+    static var heatLow: Color { themed(\.heatLow) }
+    static var heatHigh: Color { themed(\.heatHigh) }
+
+    /// Interpolated heat color for a 0...1 intensity — correct in both
+    /// appearances and tinted to the active theme.
+    static func heat(_ intensity: Double) -> Color {
+        let f = min(max(intensity, 0), 1)
+        return Color(uiColor: UIColor { traits in
+            let palette = AppTheme.current.palette(dark: traits.userInterfaceStyle == .dark)
+            return UIColor(palette.heatLow.interpolate(to: palette.heatHigh, fraction: f))
+        })
+    }
+}
+
+/// The signature accent gradient used for hero surfaces and primary CTAs.
+/// Computed so it always reflects the live theme.
 extension LinearGradient {
-    static let ember = LinearGradient(
-        colors: [.appGradientStart, .appGradientEnd],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
+    static var ember: LinearGradient {
+        LinearGradient(
+            colors: [.appGradientStart, .appGradientEnd],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 }
 
 // MARK: - Theme Manager
@@ -162,6 +227,16 @@ class ThemeManager: ObservableObject {
     @Published var selectedFont: AppFontChoice {
         didSet {
             UserDefaults.standard.set(selectedFont.rawValue, forKey: "selectedFont")
+        }
+    }
+
+    /// The active color theme. Updating it repaints the whole app (ContentView
+    /// keys its content on this value) and keeps `AppTheme.current` in sync so
+    /// the color providers resolve the new palette.
+    @Published var theme: AppTheme {
+        didSet {
+            AppTheme.current = theme
+            UserDefaults.standard.set(theme.rawValue, forKey: "appTheme")
         }
     }
 
@@ -181,6 +256,8 @@ class ThemeManager: ObservableObject {
         default:
             self.selectedFont = .standard
         }
+
+        self.theme = AppTheme.current
     }
 
     var background: Color { .appBackground }
@@ -236,7 +313,7 @@ struct SectionKicker: View {
 
 struct CardModifier: ViewModifier {
     @EnvironmentObject var themeManager: ThemeManager
-    private let cornerRadius: CGFloat = 22
+    private let cornerRadius: CGFloat = 18
 
     func body(content: Content) -> some View {
         content
@@ -268,7 +345,7 @@ struct InputModifier: ViewModifier {
         content
             .padding(12)
             .background(themeManager.inputBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .foregroundColor(themeManager.primaryText)
     }
 }
@@ -301,7 +378,7 @@ struct EmberButtonStyle: ButtonStyle {
             .padding(.vertical, compact ? 10 : 16)
             .padding(.horizontal, compact ? 16 : 20)
             .background(LinearGradient.ember)
-            .clipShape(RoundedRectangle(cornerRadius: compact ? 14 : 18, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: compact ? 12 : 15, style: .continuous))
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
@@ -317,7 +394,7 @@ struct QuietButtonStyle: ButtonStyle {
             .padding(.vertical, 10)
             .padding(.horizontal, 16)
             .background(Color.appAccentSoft)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }

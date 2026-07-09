@@ -325,15 +325,37 @@ class BodyWeightEntry {
     }
 }
 
+/// The pose a progress photo captures, so timelines can be compared like-for-like.
+enum ProgressPose: String, CaseIterable, Identifiable, Codable {
+    case front = "Front"
+    case side = "Side"
+    case back = "Back"
+    case legs = "Legs"
+
+    var id: String { rawValue }
+
+    static func from(stored: String) -> ProgressPose {
+        ProgressPose(rawValue: stored) ?? .front
+    }
+}
+
 @Model
 class ProgressPhoto {
     var date: Date
     var imageData: Data
     var notes: String
+    /// Which pose this shot is. Defaults to Front so pre-existing rows migrate cleanly.
+    var poseRawValue: String = ProgressPose.front.rawValue
 
-    init(date: Date, imageData: Data, notes: String = "") {
+    var pose: ProgressPose {
+        get { ProgressPose.from(stored: poseRawValue) }
+        set { poseRawValue = newValue.rawValue }
+    }
+
+    init(date: Date, imageData: Data, notes: String = "", pose: ProgressPose = .front) {
         self.date = date
         self.imageData = imageData
         self.notes = notes
+        self.poseRawValue = pose.rawValue
     }
 }

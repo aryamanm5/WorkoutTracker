@@ -83,6 +83,10 @@ struct TrendChart: View {
         )
         .chartLegend(splitByLocation ? .visible : .hidden)
         .chartYScale(domain: domain)
+        // Clip the plot so the area gradient can't bleed below the axis/frame.
+        .chartPlotStyle { plot in
+            plot.clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
         // Force calendar-date labels — with a narrow date span Swift Charts
         // otherwise defaults the axis to clock times.
         .chartXAxis {
