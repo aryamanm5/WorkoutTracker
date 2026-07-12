@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CryptoKit
+import LocalAuthentication
 
 /// SHA-256 helper for the progress-photos password. Not bank-grade security —
 /// just keeps the photos out of casual reach when handing the phone over.
@@ -8,6 +9,22 @@ enum PasscodeHasher {
     static func hash(_ value: String) -> String {
         let digest = SHA256.hash(data: Data(value.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Forgot-password escape hatch: proving you own the device (Face ID,
+    /// Touch ID, or the device passcode) is at least as strong as the photo
+    /// password, so it may reset the lock.
+    static func recoverWithDeviceAuth(onSuccess: @escaping () -> Void) {
+        let context = LAContext()
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: nil) else { return }
+        context.evaluatePolicy(
+            .deviceOwnerAuthentication,
+            localizedReason: "Reset your progress photo password"
+        ) { success, _ in
+            if success {
+                DispatchQueue.main.async(execute: onSuccess)
+            }
+        }
     }
 }
 

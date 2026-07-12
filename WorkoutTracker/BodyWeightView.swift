@@ -519,6 +519,16 @@ struct BodyWeightView: View {
                     }
                     unlockEntry = ""
                 }
+                Button("Forgot Password?") {
+                    unlockEntry = ""
+                    // Device auth clears the forgotten password entirely so a
+                    // fresh one can be set from Settings.
+                    PasscodeHasher.recoverWithDeviceAuth {
+                        progressPhotosLockEnabled = false
+                        progressPhotosPasswordHash = ""
+                        photosUnlocked = true
+                    }
+                }
                 Button("Cancel", role: .cancel) { unlockEntry = "" }
             }
             .alert("Wrong Password", isPresented: $showingWrongPassword) {

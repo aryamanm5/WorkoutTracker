@@ -227,24 +227,7 @@ struct SessionDetailView: View {
             SectionKicker(text: "Sets")
             ForEach(session.sets.sorted { $0.setNumber < $1.setNumber }, id: \.persistentModelID) { set in
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 12) {
-                        Text("\(set.setNumber)")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .frame(width: 26, height: 26)
-                            .background(Color.appAccentSoft)
-                            .foregroundColor(.appAccent)
-                            .clipShape(Circle())
-                        Text("\(set.reps) reps")
-                            .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
-                        if set.weight > 0 {
-                            Text("@ \(TrainingEngine.formatWeight(set.weight)) lb")
-                                .appBodyStyle()
-                                .foregroundColor(themeManager.secondaryText)
-                        }
-                        Spacer()
-                        DifficultyDots(rating: set.difficulty, size: 8)
-                    }
+                    SetRow(number: set.setNumber, reps: set.reps, weight: set.weight, difficulty: set.difficulty)
                     HStack(spacing: 10) {
                         if let rest = set.restTimeSeconds {
                             Label("\(rest)s rest", systemImage: "timer")

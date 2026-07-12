@@ -1,10 +1,14 @@
 import SwiftUI
+import SwiftData
 import Charts
 
 /// Per-exercise analytics: e1RM trend, bests, and full session history.
 struct ExerciseDetailView: View {
     let exercise: Exercise
     @EnvironmentObject var themeManager: ThemeManager
+    @Environment(\.modelContext) private var context
+
+    @State private var sessionToDelete: ExerciseSession?
 
     private var sortedSessions: [ExerciseSession] {
         exercise.sessions.sorted { $0.date > $1.date }
@@ -30,6 +34,25 @@ struct ExerciseDetailView: View {
         .background(themeManager.background.ignoresSafeArea())
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog(
+            "Delete this session?",
+            isPresented: Binding(
+                get: { sessionToDelete != nil },
+                set: { if !$0 { sessionToDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let session = sessionToDelete {
+                    context.delete(session)
+                    try? context.save()
+                }
+                sessionToDelete = nil
+            }
+            Button("Cancel", role: .cancel) { sessionToDelete = nil }
+        } message: {
+            Text("This removes the \(sessionToDelete?.date.formatted(date: .abbreviated, time: .omitted) ?? "") session and all its sets.")
+        }
     }
 
     // MARK: - Summary
@@ -94,6 +117,13 @@ struct ExerciseDetailView: View {
                     SessionCard(session: session)
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button(role: .destructive) {
+                        sessionToDelete = session
+                    } label: {
+                        Label("Delete Session", systemImage: "trash")
+                    }
+                }
             }
         }
     }

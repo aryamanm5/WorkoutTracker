@@ -134,6 +134,32 @@ enum TrainingEngine {
 
     // MARK: - Progression
 
+    /// What the coach is progressing you toward. Hypertrophy runs double
+    /// progression (8–12 reps, weight moves only when every set tops the
+    /// range); strength runs linear progression (5+ clean reps on all sets
+    /// adds weight every session, StrongLifts-style).
+    enum TrainingGoal: String, CaseIterable, Identifiable {
+        case hypertrophy
+        case strength
+
+        var id: String { rawValue }
+
+        var displayName: String {
+            self == .hypertrophy ? "Hypertrophy" : "Strength"
+        }
+
+        /// Resolved from Settings at decision time so every existing call
+        /// site picks up the user's goal without threading it through views.
+        static var current: TrainingGoal {
+            TrainingGoal(rawValue: UserDefaults.standard.string(forKey: "trainingGoal") ?? "") ?? .hypertrophy
+        }
+    }
+
+    /// Top of the hypertrophy rep range: clear this on every set to add weight.
+    static let hypertrophyRepTop = 12
+    /// Strength prescription: all sets need at least this many clean reps.
+    static let strengthRepFloor = 5
+
     enum ProgressionKind {
         case increase
         case hold
@@ -147,10 +173,16 @@ enum TrainingEngine {
         let reason: String
     }
 
-    /// Coach's plate jump for one progression step: isolation moves creep up
-    /// by 2.5 lb, everything else (compounds, machines) moves in 5 lb steps.
+    /// Coach's plate jump for one progression step, sized to the equipment
+    /// (StrongLifts / Starting Strength convention): isolation moves creep up
+    /// by 2.5 lb, deadlifts and pin-stack machines take 10 lb jumps, and
+    /// everything else — barbell, dumbbell, cable compounds — moves in 5 lb
+    /// steps, the smallest jump most gyms actually stock.
     static func weightIncrement(for exercise: Exercise) -> Double {
-        isIsolation(exercise.name) ? 2.5 : 5.0
+        if isIsolation(exercise.name) { return 2.5 }
+        let n = exercise.name.lowercased()
+        if n.contains("deadlift") || n.contains("machine") { return 10 }
+        return 5
     }
 
     /// Assisted moves (assisted pull-up/dip/chin-up) load the machine's help,
@@ -179,7 +211,7 @@ enum TrainingEngine {
     /// gym keep separate exercise libraries, an exercise's history is
     /// inherently one location's history — home dumbbell work never inflates
     /// gym machine advice.
-    static func progression(for exercise: Exercise, now: Date = Date()) -> ProgressionAdvice? {
+    static func progression(for exercise: Exercise, now: Date = Date(), goal: TrainingGoal = .current) -> ProgressionAdvice? {
         guard !exercise.isCardio else { return nil }
 
         if exercise.shouldIncreaseWeight, let manual = exercise.suggestedNextWeight, manual > 0 {
@@ -197,7 +229,6 @@ enum TrainingEngine {
         let reps = lastSession.sets.map(\.reps)
         let minReps = reps.min() ?? 0
         let setCount = lastSession.sets.count
-        let avgReps = Double(reps.reduce(0, +)) / Double(reps.count)
         let avgDifficulty = Double(lastSession.sets.map(\.difficulty).reduce(0, +)) / Double(lastSession.sets.count)
         let jump = weightIncrement(for: exercise)
 
@@ -227,19 +258,25 @@ enum TrainingEngine {
             )
         }
 
-        // How many recent sessions in a row topped out at this same weight,
-        // and how many of those were grinders (avg effort ≥ 4.5).
-        var sameWeightStreak = 0
+        // Walking back through sessions stuck at this same top weight: how
+        // many in a row were grinders (avg effort ≥ 4.5), and — for strength
+        // mode — how many missed the 5-rep floor.
         var grinderStreak = 0
         var grindersUnbroken = true
+        var failStreak = 0
+        var failsUnbroken = true
         for session in history {
             guard let sessionTop = session.sets.map(\.weight).max(), abs(sessionTop - top) < 0.01 else { break }
-            sameWeightStreak += 1
             let effort = Double(session.sets.map(\.difficulty).reduce(0, +)) / Double(max(session.sets.count, 1))
             if grindersUnbroken && effort >= 4.5 {
                 grinderStreak += 1
             } else {
                 grindersUnbroken = false
+            }
+            if failsUnbroken && (session.sets.map(\.reps).min() ?? 0) < strengthRepFloor {
+                failStreak += 1
+            } else {
+                failsUnbroken = false
             }
         }
 
@@ -256,80 +293,67 @@ enum TrainingEngine {
             }
         }
 
-        // Double progression, the best-evidenced rule for when to add load:
-        // work an 8–12 rep range and only add weight once every set clears the
-        // top of it. Research on reps-in-reserve shows 1–2 RIR (a "hard" but
-        // not all-out set) drives the same gains as grinding to failure with far
-        // less fatigue — so clearing the top of the range on a Hard-or-easier
-        // session (avg effort ≤ 4/5, i.e. ~1–2 RIR) earns the bump. Only a true
-        // grinder (≥ 4.5, caught below) holds you at the weight.
-        if minReps >= 12 {
-            return ProgressionAdvice(
-                kind: .increase,
-                weight: top + jump,
-                reason: "You topped the rep range at \(formatWeight(top)) lb for \(minReps) reps — go up \(formatWeight(jump)) lb."
-            )
-        }
-        if minReps >= 8 && avgDifficulty <= 4.0 {
-            return ProgressionAdvice(
-                kind: .increase,
-                weight: top + jump,
-                reason: "\(formatWeight(top)) lb for \(minReps) reps with 1–2 in reserve — go up \(formatWeight(jump)) lb."
-            )
-        }
-
-        // Low-rep strength work (e.g. 3-rep sets): sets done matters more than
-        // reps per set. 8 sets holds unless it felt easy; 10+ sets always earns
-        // a bump.
-        if avgReps <= 5 {
-            if setCount >= 10 {
+        switch goal {
+        case .hypertrophy:
+            // Double progression, the best-evidenced hypertrophy rule: work an
+            // 8–12 rep range and add weight ONLY once every set clears the top
+            // of it. Hitting 3×8 is the floor of the range, not the trigger.
+            if minReps >= hypertrophyRepTop {
                 return ProgressionAdvice(
                     kind: .increase,
                     weight: top + jump,
-                    reason: "\(setCount) sets of \(minReps) at \(formatWeight(top)) lb is serious volume — time to add weight."
+                    reason: "Every set hit \(hypertrophyRepTop) at \(formatWeight(top)) lb — go up \(formatWeight(jump)) lb and build back from 8s."
                 )
             }
-            if avgDifficulty <= 2.0 {
+            if avgDifficulty >= 4.5 {
                 return ProgressionAdvice(
-                    kind: .increase,
-                    weight: top + jump,
-                    reason: "\(formatWeight(top)) lb for \(setCount) sets felt easy — time to move up."
+                    kind: .hold,
+                    weight: top,
+                    reason: "Last session was a grinder. Own \(formatWeight(top)) lb before chasing more reps."
                 )
             }
             return ProgressionAdvice(
                 kind: .hold,
                 weight: top,
-                reason: "Stay at \(formatWeight(top)) lb for \(setCount) sets — push to 10 sets or an easier effort before adding more."
+                reason: "Add reps before weight: your lowest set was \(minReps) — get every set to \(hypertrophyRepTop) at \(formatWeight(top)) lb to earn the bump."
             )
-        }
 
-        if avgDifficulty >= 4.5 {
+        case .strength:
+            // Linear progression (StrongLifts / Starting Strength): complete
+            // every set at 5+ clean reps and the weight goes up next session.
+            // Three straight sessions missing the floor triggers a 10% deload.
+            if failStreak >= 3 {
+                let deload = max(jump, roundToIncrement(top * 0.9, increment: jump))
+                if deload < top {
+                    return ProgressionAdvice(
+                        kind: .decrease,
+                        weight: deload,
+                        reason: "\(failStreak) sessions missing \(strengthRepFloor)s at \(formatWeight(top)) lb. Deload to \(formatWeight(deload)) lb and run it back up."
+                    )
+                }
+            }
+            if minReps >= strengthRepFloor {
+                return ProgressionAdvice(
+                    kind: .increase,
+                    weight: top + jump,
+                    reason: "All \(setCount) sets at \(strengthRepFloor)+ reps with \(formatWeight(top)) lb — linear progression says add \(formatWeight(jump)) lb."
+                )
+            }
             return ProgressionAdvice(
                 kind: .hold,
                 weight: top,
-                reason: "Last session was a grinder. Own \(formatWeight(top)) lb before adding more."
+                reason: "You missed \(strengthRepFloor) reps on a set at \(formatWeight(top)) lb — repeat it and finish every set next time."
             )
         }
-        if sameWeightStreak >= 2 {
-            return ProgressionAdvice(
-                kind: .hold,
-                weight: top,
-                reason: "Session \(sameWeightStreak) at \(formatWeight(top)) lb — hit 8+ solid reps every set to earn the bump."
-            )
-        }
-        return ProgressionAdvice(
-            kind: .hold,
-            weight: top,
-            reason: "Stay at \(formatWeight(top)) lb — one more solid session and you'll be ready to add."
-        )
     }
 
     // MARK: - e1RM & PRs
 
-    /// Epley estimated one-rep max.
+    /// Epley estimated one-rep max, rounded to a whole pound — an estimate
+    /// with decimals reads as false precision everywhere it's shown.
     static func estimatedOneRepMax(weight: Double, reps: Int) -> Double {
         guard weight > 0, reps > 0 else { return 0 }
-        return weight * (1 + Double(reps) / 30.0)
+        return (weight * (1 + Double(reps) / 30.0)).rounded()
     }
 
     static func bestOneRepMax(in session: ExerciseSession) -> Double {

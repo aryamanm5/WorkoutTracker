@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Query(sort: \BodyWeightEntry.date, order: .reverse) private var weightEntries: [BodyWeightEntry]
 
     @AppStorage("restTargetSeconds") private var restTarget: Int = 90
+    @AppStorage("trainingGoal") private var trainingGoal: TrainingEngine.TrainingGoal = .hypertrophy
     @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
     @AppStorage("progressPhotosEnabled") private var progressPhotosEnabled = true
     @AppStorage("progressPhotosLockEnabled") private var progressPhotosLockEnabled = false
@@ -71,6 +72,25 @@ struct SettingsView: View {
     private var trainingCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             SectionKicker(text: "Training")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Coach goal")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.primaryText)
+                Picker("Coach goal", selection: $trainingGoal) {
+                    ForEach(TrainingEngine.TrainingGoal.allCases) { goal in
+                        Text(goal.displayName).tag(goal)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text(trainingGoal == .hypertrophy
+                     ? "Adds weight once every set hits 12 reps in the 8–12 range."
+                     : "Adds weight every session you finish all sets at 5+ reps.")
+                    .appCaptionStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+
+            Divider()
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Rest timer")
@@ -241,7 +261,7 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) { passwordEntry = "" }
         } message: {
-            Text("You'll need this password to see your progress photos or turn the lock off. There is no recovery if you forget it.")
+            Text("You'll need this password to see your progress photos or turn the lock off. If you forget it, you can reset it with Face ID or your device passcode.")
         }
         .alert("Enter Password to Remove Lock", isPresented: $showingRemovePassword) {
             SecureField("Password", text: $passwordEntry)
@@ -253,6 +273,13 @@ struct SettingsView: View {
                     showingWrongPassword = true
                 }
                 passwordEntry = ""
+            }
+            Button("Forgot Password?") {
+                passwordEntry = ""
+                PasscodeHasher.recoverWithDeviceAuth {
+                    progressPhotosLockEnabled = false
+                    progressPhotosPasswordHash = ""
+                }
             }
             Button("Cancel", role: .cancel) { passwordEntry = "" }
         }

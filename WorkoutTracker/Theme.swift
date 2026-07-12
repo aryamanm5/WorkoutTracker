@@ -350,6 +350,39 @@ struct InputModifier: ViewModifier {
     }
 }
 
+/// One logged set as a display row: numbered badge, reps, optional weight,
+/// and effort dots. Shared by session detail, exercise preview, and the
+/// live logger's completed-sets list.
+struct SetRow: View {
+    let number: Int
+    let reps: Int
+    let weight: Double
+    let difficulty: Int
+
+    @EnvironmentObject var themeManager: ThemeManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(number)")
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .frame(width: 26, height: 26)
+                .background(Color.appAccentSoft)
+                .foregroundColor(.appAccent)
+                .clipShape(Circle())
+            Text("\(reps) reps")
+                .appBodyStyle()
+                .foregroundColor(themeManager.primaryText)
+            if weight > 0 {
+                Text("@ \(TrainingEngine.formatWeight(weight)) lb")
+                    .appBodyStyle()
+                    .foregroundColor(themeManager.secondaryText)
+            }
+            Spacer()
+            DifficultyDots(rating: difficulty, size: 8)
+        }
+    }
+}
+
 /// Small rounded tag, e.g. muscle chips and status pills.
 struct ChipLabel: View {
     let text: String

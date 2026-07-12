@@ -401,24 +401,7 @@ struct ExercisePreviewView: View {
                 lastCardioRows(session)
             } else {
                 ForEach(session.sets.sorted { $0.setNumber < $1.setNumber }, id: \.persistentModelID) { set in
-                    HStack(spacing: 12) {
-                        Text("\(set.setNumber)")
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .frame(width: 26, height: 26)
-                            .background(Color.appAccentSoft)
-                            .foregroundColor(.appAccent)
-                            .clipShape(Circle())
-                        Text("\(set.reps) reps")
-                            .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
-                        if set.weight > 0 {
-                            Text("@ \(TrainingEngine.formatWeight(set.weight)) lb")
-                                .appBodyStyle()
-                                .foregroundColor(themeManager.secondaryText)
-                        }
-                        Spacer()
-                        DifficultyDots(rating: set.difficulty, size: 8)
-                    }
+                    SetRow(number: set.setNumber, reps: set.reps, weight: set.weight, difficulty: set.difficulty)
                 }
             }
             if !session.machineSettings.isEmpty {
@@ -518,6 +501,7 @@ struct ExerciseLoggerView: View {
     @State private var intensity = 5.0
 
     // Shared state
+    @State private var nextTargetText = ""
     @State private var sessionNotes = ""
     @State private var location: WorkoutLocation = .gym
     @State private var lastSetSavedAt: Date?
@@ -825,24 +809,7 @@ struct ExerciseLoggerView: View {
         VStack(alignment: .leading, spacing: 10) {
             SectionKicker(text: "Logged Sets")
             ForEach(completedSets) { set in
-                HStack(spacing: 12) {
-                    Text("\(set.setNumber)")
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
-                        .frame(width: 26, height: 26)
-                        .background(Color.appAccentSoft)
-                        .foregroundColor(.appAccent)
-                        .clipShape(Circle())
-                    Text("\(set.reps) reps")
-                        .appBodyStyle()
-                        .foregroundColor(themeManager.primaryText)
-                    if set.weight > 0 {
-                        Text("@ \(TrainingEngine.formatWeight(set.weight)) lb")
-                            .appBodyStyle()
-                            .foregroundColor(themeManager.secondaryText)
-                    }
-                    Spacer()
-                    DifficultyDots(rating: set.difficulty, size: 8)
-                }
+                SetRow(number: set.setNumber, reps: set.reps, weight: set.weight, difficulty: set.difficulty)
             }
         }
         .padding(16)
@@ -912,6 +879,18 @@ struct ExerciseLoggerView: View {
             if !exercise.isCardio {
                 TextField("Machine settings (seat height, pin…)", text: $machineSettings)
                     .appInputStyle()
+
+                HStack(spacing: 4) {
+                    TextField("Weight next workout (optional)", text: $nextTargetText)
+                        .keyboardType(.decimalPad)
+                        .appInputStyle()
+                    Text("lb")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
+                Text("The coach will hold you to this next time instead of computing its own advice.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(themeManager.secondaryText)
             }
 
             TextField("Session notes (optional)", text: $sessionNotes, axis: .vertical)
@@ -1070,9 +1049,14 @@ struct ExerciseLoggerView: View {
         }
 
         // The engine recomputes next time from this fresh session, so clear
-        // any stale manual target the user saved before it.
-        exercise.shouldIncreaseWeight = false
-        exercise.suggestedNextWeight = nil
+        // any stale manual target — unless the user just pinned a new one.
+        if let target = Double(nextTargetText), target > 0 {
+            exercise.shouldIncreaseWeight = true
+            exercise.suggestedNextWeight = target
+        } else {
+            exercise.shouldIncreaseWeight = false
+            exercise.suggestedNextWeight = nil
+        }
 
         try? context.save()
         UINotificationFeedbackGenerator().notificationOccurred(.success)
