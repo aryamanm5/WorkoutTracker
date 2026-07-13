@@ -123,6 +123,7 @@ struct InsightsView: View {
                         .foregroundColor(.appAccent)
                         .frame(width: 30, height: 30)
                 }
+                .hapticButton(.tap, pressScale: 0.9)
                 Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(themeManager.primaryText)
@@ -135,6 +136,7 @@ struct InsightsView: View {
                         .foregroundColor(.appAccent)
                         .frame(width: 30, height: 30)
                 }
+                .hapticButton(.tap, pressScale: 0.9)
             }
 
             let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
@@ -158,7 +160,7 @@ struct InsightsView: View {
                                 }?.tookCreatine ?? false
                             )
                         }
-                        .buttonStyle(.plain)
+                        .hapticButton(.tap, pressScale: 0.92)
                     } else {
                         Color.clear.frame(height: 38)
                     }
@@ -281,7 +283,10 @@ struct InsightsView: View {
                     ForEach(WorkoutLocation.allCases) { loc in
                         Section(loc.rawValue) {
                             ForEach(exercises.filter { $0.location == loc }, id: \.persistentModelID) { exercise in
-                                Button(exercise.name) { chartExerciseName = exercise.name }
+                                Button(exercise.name) {
+                                    chartExerciseName = exercise.name
+                                    Haptics.shared.play(.selection)
+                                }
                             }
                         }
                     }
@@ -370,6 +375,7 @@ struct InsightsView: View {
                     }
                     .padding(.vertical, 10)
                 }
+                .hapticRow()
                 if exercise.persistentModelID != exercises.filter({ !$0.sessions.isEmpty }).last?.persistentModelID {
                     Divider()
                 }

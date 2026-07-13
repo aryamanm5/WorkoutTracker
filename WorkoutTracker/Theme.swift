@@ -399,7 +399,9 @@ struct ChipLabel: View {
     }
 }
 
-/// Primary ember CTA button style.
+/// Primary ember CTA button style. Being the heaviest control in the app, it
+/// gets the heaviest feedback — a strike with a resonant body (see `Haptics`).
+/// Compact CTAs sit between that and a plain tap.
 struct EmberButtonStyle: ButtonStyle {
     var compact: Bool = false
 
@@ -415,6 +417,9 @@ struct EmberButtonStyle: ButtonStyle {
             .opacity(configuration.isPressed ? 0.85 : 1)
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { Haptics.shared.play(.press, scale: compact ? 0.8 : 1) }
+            }
     }
 }
 
@@ -429,6 +434,9 @@ struct QuietButtonStyle: ButtonStyle {
             .background(Color.appAccentSoft)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .opacity(configuration.isPressed ? 0.7 : 1)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { Haptics.shared.play(.soft) }
+            }
     }
 }
 

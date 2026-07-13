@@ -40,7 +40,7 @@ struct DayDetailView: View {
                         } label: {
                             SessionCard(session: session)
                         }
-                        .buttonStyle(.plain)
+                        .hapticRow()
                         .contextMenu {
                             Button(role: .destructive) {
                                 sessionToDelete = session
@@ -65,6 +65,7 @@ struct DayDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
+                Haptics.shared.play(.destructive)
                 if let session = sessionToDelete {
                     context.delete(session)
                     try? context.save()
@@ -191,6 +192,7 @@ struct SessionDetailView: View {
                     EditSessionView(session: session)
                 }
                 .fontWeight(.semibold)
+                .hapticButton(.tap, pressScale: 1)
             }
         }
     }
@@ -338,6 +340,7 @@ struct EditSessionView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .onChange(of: selectedLocation) { Haptics.shared.play(.selection) }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -390,6 +393,7 @@ struct EditSessionView: View {
                 }
                 Slider(value: $intensityRating, in: 1...10, step: 1)
                     .tint(.appAccent)
+                    .onChange(of: intensityRating) { Haptics.shared.play(.detent) }
             }
         }
         .padding(16)
@@ -432,6 +436,7 @@ struct EditSessionView: View {
                             Image(systemName: "trash")
                                 .foregroundColor(.appDanger)
                         }
+                        .hapticButton(.destructive, pressScale: 0.9)
                     }
 
                     HStack(spacing: 10) {

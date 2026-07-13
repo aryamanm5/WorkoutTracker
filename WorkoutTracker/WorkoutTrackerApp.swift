@@ -24,6 +24,8 @@ struct WorkoutTrackerApp: App {
         }
     }
 
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -32,7 +34,13 @@ struct WorkoutTrackerApp: App {
                 .modelContainer(container)
                 .onAppear {
                     viewModel.processMissingDays(context: container.mainContext)
+                    Haptics.shared.prepare()
                 }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // iOS shuts the haptic engine down while we're backgrounded, so the
+            // first tap after returning would otherwise be silent.
+            if phase == .active { Haptics.shared.prepare() }
         }
     }
     

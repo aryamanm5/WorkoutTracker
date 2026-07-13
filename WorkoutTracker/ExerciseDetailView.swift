@@ -43,6 +43,7 @@ struct ExerciseDetailView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
+                Haptics.shared.play(.destructive)
                 if let session = sessionToDelete {
                     context.delete(session)
                     try? context.save()
@@ -116,7 +117,7 @@ struct ExerciseDetailView: View {
                 } label: {
                     SessionCard(session: session)
                 }
-                .buttonStyle(.plain)
+                .hapticRow()
                 .contextMenu {
                     Button(role: .destructive) {
                         sessionToDelete = session

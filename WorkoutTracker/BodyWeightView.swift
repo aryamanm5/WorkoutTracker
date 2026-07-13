@@ -50,6 +50,7 @@ struct BodyWeightView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: section) { Haptics.shared.play(.selection) }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 4)
@@ -87,6 +88,7 @@ struct BodyWeightView: View {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundColor(.appAccent)
                         }
+                        .hapticButton()
                     }
                 }
             }
@@ -109,6 +111,7 @@ struct BodyWeightView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete", role: .destructive) {
+                    Haptics.shared.play(.destructive)
                     if let entry = entryToDelete {
                         context.delete(entry)
                         try? context.save()
@@ -275,6 +278,7 @@ struct BodyWeightView: View {
                 Button(hasGoal ? "Edit" : "Set Goal") { showingGoalSheet = true }
                     .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.appAccent)
+                    .hapticButton()
             }
 
             if hasGoal, let latest = entries.first {
@@ -370,7 +374,6 @@ struct BodyWeightView: View {
 
             Button {
                 updateCreatineStatus(on: Date(), took: !takenToday, context: context, days: workoutDays)
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
                 HStack {
                     Image(systemName: takenToday ? "checkmark.circle.fill" : "circle")
@@ -384,6 +387,7 @@ struct BodyWeightView: View {
                 .background(takenToday ? AnyShapeStyle(Color.appCreatine) : AnyShapeStyle(Color.appCreatine.opacity(0.12)))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
+            .hapticButton(takenToday ? .toggleOff : .toggleOn, pressScale: 0.98)
 
             // Past 7 days — tap any dot to toggle.
             HStack(spacing: 0) {
@@ -407,8 +411,9 @@ struct BodyWeightView: View {
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        updateCreatineStatus(on: day, took: !tookCreatine(on: day), context: context, days: workoutDays)
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        let took = tookCreatine(on: day)
+                        Haptics.shared.play(took ? .toggleOff : .toggleOn)
+                        updateCreatineStatus(on: day, took: !took, context: context, days: workoutDays)
                     }
                 }
             }
@@ -426,6 +431,7 @@ struct BodyWeightView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.appAccent)
             }
+            .hapticButton(.tap, pressScale: 0.99)
 
             if showingCreatineCalendar {
                 VStack(spacing: 10) {
@@ -436,7 +442,6 @@ struct BodyWeightView: View {
                     let took = tookCreatine(on: historicalDate)
                     Button {
                         updateCreatineStatus(on: historicalDate, took: !took, context: context, days: workoutDays)
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         HStack {
                             Image(systemName: took ? "checkmark.circle.fill" : "circle")
@@ -450,6 +455,7 @@ struct BodyWeightView: View {
                         .background(took ? AnyShapeStyle(Color.appCreatine) : AnyShapeStyle(Color.appCreatine.opacity(0.12)))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
+                    .hapticButton(took ? .toggleOff : .toggleOn, pressScale: 0.98)
                 }
                 .padding(12)
                 .background(themeManager.inputBackground.opacity(0.5))
@@ -505,6 +511,7 @@ struct BodyWeightView: View {
                     .background(Color.appAccentSoft)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                .hapticButton(.soft, pressScale: 0.98)
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -580,6 +587,7 @@ struct BodyWeightView: View {
                             .font(.system(size: 13))
                             .foregroundColor(.appDanger.opacity(0.7))
                     }
+                    .hapticButton(.warning, pressScale: 0.9)
                 }
                 .padding(.vertical, 8)
                 if entry.persistentModelID != entries.prefix(30).last?.persistentModelID {
@@ -674,6 +682,7 @@ private struct WeightGoalSheet: View {
                         dismiss()
                     }
                     .font(.system(size: 14, weight: .semibold))
+                    .hapticButton(.destructive, pressScale: 0.98)
                 }
 
                 Spacer()
@@ -685,6 +694,7 @@ private struct WeightGoalSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .hapticButton(.tap, pressScale: 1)
                 }
             }
             .onAppear {
@@ -751,12 +761,14 @@ private struct PhotoPickerButton: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.appAccent)
         }
+        .hapticButton()
         .onChange(of: selectedItem) {
             guard let item = selectedItem else { return }
             Task { @MainActor in
                 if let data = try? await item.loadTransferable(type: Data.self) {
                     context.insert(ProgressPhoto(date: Date(), imageData: data, pose: pose))
                     try? context.save()
+                    Haptics.shared.play(.setLogged)
                 }
                 selectedItem = nil
             }
@@ -794,11 +806,13 @@ private struct ProgressPhotoCard: View {
                         .font(.system(size: 11))
                         .foregroundColor(.appDanger.opacity(0.7))
                 }
+                .hapticButton(.warning, pressScale: 0.9)
             }
             .frame(width: 130)
         }
         .confirmationDialog("Delete this photo?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
+                Haptics.shared.play(.destructive)
                 context.delete(photo)
                 try? context.save()
             }

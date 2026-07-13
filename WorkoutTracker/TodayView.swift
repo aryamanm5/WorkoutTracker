@@ -164,7 +164,6 @@ struct TodayView: View {
                 let isSelected = trainingLocation == loc
                 Button {
                     preferredLocationRaw = loc.rawValue
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: loc.icon)
@@ -178,6 +177,7 @@ struct TodayView: View {
                     .background(isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
                     .clipShape(Capsule())
                 }
+                .hapticButton(.selection)
                 .accessibilityIdentifier("location_\(loc == .home ? "home" : "gym")")
             }
         }
@@ -217,6 +217,10 @@ struct TodayView: View {
                 .background(Color.appAccentSoft)
                 .clipShape(Circle())
         }
+        // Menu items are system-rendered, so a ButtonStyle can't reach them:
+        // tap the label, then confirm the pick when the selection lands.
+        .simultaneousGesture(TapGesture().onEnded { Haptics.shared.play(.tap) })
+        .onChange(of: focusOverride) { Haptics.shared.play(.selection) }
         .accessibilityLabel("Change focus")
     }
 
@@ -326,6 +330,9 @@ struct TodayView: View {
                 .background(taken ? AnyShapeStyle(Color.appCreatine) : AnyShapeStyle(Color.appCreatine.opacity(0.14)))
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
+            // Follows the state rather than the tap: taking creatine rises,
+            // undoing it falls.
+            .hapticButton((todayDay?.tookCreatine ?? false) ? .toggleOff : .toggleOn, pressScale: 0.97)
 
             Button {
                 showingWeightSheet = true
@@ -342,6 +349,7 @@ struct TodayView: View {
                 .background(Color.appCardio.opacity(0.14))
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
+            .hapticButton(.soft, pressScale: 0.97)
         }
     }
 

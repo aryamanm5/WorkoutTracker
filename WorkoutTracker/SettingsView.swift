@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("trainingGoal") private var trainingGoal: TrainingEngine.TrainingGoal = .hypertrophy
     @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
     @AppStorage("progressPhotosEnabled") private var progressPhotosEnabled = true
+    @AppStorage("hapticsEnabled") private var hapticsEnabled = true
     @AppStorage("progressPhotosLockEnabled") private var progressPhotosLockEnabled = false
     @AppStorage("progressPhotosPasswordHash") private var progressPhotosPasswordHash = ""
 
@@ -83,6 +84,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: trainingGoal) { Haptics.shared.play(.selection) }
                 Text(trainingGoal == .hypertrophy
                      ? "Adds weight once every set hits 12 reps in the 8–12 range."
                      : "Adds weight every session you finish all sets at 5+ reps.")
@@ -102,6 +104,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: restTarget) { Haptics.shared.play(.selection) }
                 Text("Countdown between sets during a live session.")
                     .appCaptionStyle()
                     .foregroundColor(themeManager.secondaryText)
@@ -150,6 +153,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: themeManager.appearance) { Haptics.shared.play(.selection) }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -173,6 +177,36 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: themeManager.selectedFont) { Haptics.shared.play(.selection) }
+            }
+
+            Divider()
+
+            Toggle(isOn: $hapticsEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Haptics")
+                        .appBodyStyle()
+                        .foregroundColor(themeManager.primaryText)
+                    Text("Taps on buttons, and a celebration when you finish")
+                        .appCaptionStyle()
+                        .foregroundColor(themeManager.secondaryText)
+                }
+            }
+            .tint(.appAccent)
+            .onChange(of: hapticsEnabled) { _, enabled in
+                guard enabled else { return }
+                // The engine is torn down while off; bring it back and show off
+                // what was just switched on.
+                Haptics.shared.prepare()
+                Haptics.shared.play(.exerciseComplete)
+            }
+
+            if hapticsEnabled {
+                Button("Feel a workout celebration") {
+                    Haptics.shared.play(.workoutLegendary)
+                }
+                .buttonStyle(QuietButtonStyle())
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(16)
@@ -185,7 +219,6 @@ struct SettingsView: View {
         let selected = themeManager.theme == theme
         return Button {
             themeManager.theme = theme
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } label: {
             VStack(spacing: 6) {
                 Circle()
@@ -207,7 +240,7 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.plain)
+        .hapticButton(.selection, pressScale: 0.92)
     }
 
     // MARK: - Privacy
@@ -227,6 +260,9 @@ struct SettingsView: View {
                 }
             }
             .tint(.appAccent)
+            .onChange(of: progressPhotosEnabled) { _, on in
+                Haptics.shared.play(on ? .toggleOn : .toggleOff)
+            }
 
             if progressPhotosEnabled {
                 Divider()
@@ -244,6 +280,9 @@ struct SettingsView: View {
                     }
                 }
                 .tint(.appAccent)
+                .onChange(of: progressPhotosLockEnabled) { _, on in
+                    Haptics.shared.play(on ? .toggleOn : .toggleOff)
+                }
             }
         }
         .padding(16)
@@ -319,6 +358,7 @@ struct SettingsView: View {
                             title: "Manage Exercises",
                             subtitle: "Add, remove, and edit muscle targets")
             }
+            .hapticRow()
             Divider()
             NavigationLink {
                 AddHistoricalWorkoutView()
@@ -327,6 +367,7 @@ struct SettingsView: View {
                             title: "Log Past Workout",
                             subtitle: "Back-date a session you forgot to track")
             }
+            .hapticRow()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,6 +388,7 @@ struct SettingsView: View {
                             title: "Export CSV",
                             subtitle: "All workouts and body weight history")
             }
+            .hapticRow()
             Divider()
             Button {
                 showingImporter = true
@@ -355,6 +397,7 @@ struct SettingsView: View {
                             title: "Import CSV",
                             subtitle: "Duplicates are skipped automatically")
             }
+            .hapticRow()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -767,6 +810,7 @@ struct ManageExercisesView: View {
                                     } label: {
                                         exerciseRow(exercise)
                                     }
+                                    .hapticRow()
                                     .contextMenu {
                                         Button(role: .destructive) {
                                             exerciseToDelete = exercise
@@ -814,6 +858,7 @@ struct ManageExercisesView: View {
             titleVisibility: .visible
         ) {
             Button("Delete", role: .destructive) {
+                Haptics.shared.play(.destructive)
                 if let exercise = exerciseToDelete {
                     context.delete(exercise)
                     try? context.save()
@@ -950,6 +995,7 @@ struct ExerciseMuscleEditorView: View {
                                     .background(isOn ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
                                     .clipShape(Capsule())
                             }
+                            .hapticButton(isOn ? .toggleOff : .toggleOn, pressScale: 0.94)
                         }
                     }
                 }
@@ -1024,6 +1070,7 @@ struct AddHistoricalWorkoutView: View {
                                         Button(exercise.name) {
                                             selectedExercise = exercise
                                             location = exercise.location
+                                            Haptics.shared.play(.selection)
                                         }
                                     }
                                 }
@@ -1081,6 +1128,7 @@ struct AddHistoricalWorkoutView: View {
                             .foregroundColor(themeManager.primaryText)
                     }
                     .fixedSize()
+                    .onChange(of: set.reps) { Haptics.shared.play(.tap) }
                     TextField("lb", value: $set.weight, format: .number)
                         .keyboardType(.decimalPad)
                         .frame(width: 64)
@@ -1127,6 +1175,7 @@ struct AddHistoricalWorkoutView: View {
                     .foregroundColor(themeManager.secondaryText)
                 Slider(value: $intensity, in: 1...10, step: 1)
                     .tint(.appAccent)
+                    .onChange(of: intensity) { Haptics.shared.play(.detent) }
                 Text("\(Int(intensity))/10")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(.appAccent)

@@ -16,6 +16,7 @@ struct DifficultyDots: View {
                     .frame(width: size, height: size)
                     .onTapGesture {
                         if interactive {
+                            Haptics.shared.play(.selection)
                             onTap?(index)
                         }
                     }
@@ -158,6 +159,7 @@ struct PlateCalculatorView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                .onChange(of: barOption) { Haptics.shared.play(.selection) }
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -208,7 +210,8 @@ struct PlateCalculatorView: View {
             plates.sort { $0.value > $1.value }
             weight = totalWeight
         }
-        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        // Loading a plate should feel like its weight: a 2.5 clicks, a 45 clanks.
+        Haptics.shared.play(.press, scale: Float(min(0.45 + value / 45 * 0.55, 1.2)))
     }
 
     private func removePlate(_ plate: PlateInstance) {
@@ -216,7 +219,7 @@ struct PlateCalculatorView: View {
             plates.removeAll { $0.id == plate.id }
             weight = totalWeight
         }
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        Haptics.shared.play(.soft)
     }
 
     private func clearPlates() {
@@ -224,6 +227,7 @@ struct PlateCalculatorView: View {
             plates.removeAll()
             weight = totalWeight
         }
+        Haptics.shared.play(.destructive)
     }
 
     private func decomposeIntoPlates(target: Double) {

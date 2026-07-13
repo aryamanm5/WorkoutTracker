@@ -63,7 +63,7 @@ struct ActiveSessionView: View {
                                 isDone: viewModel.isExerciseCompletedToday(exercise)
                             )
                         }
-                        .buttonStyle(.plain)
+                        .hapticRow()
                     }
 
                     Button {
@@ -89,6 +89,7 @@ struct ActiveSessionView: View {
                             showingEndConfirm = true
                         }
                     }
+                    .hapticButton(.tap, pressScale: 1)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -164,12 +165,17 @@ struct ActiveSessionView: View {
 
     private func exerciseFinished(_ session: ExerciseSession) {
         loggedSessions.append(session)
-        if TrainingEngine.isPersonalRecord(session), let name = session.exercise?.name {
+
+        let isPR = TrainingEngine.isPersonalRecord(session)
+        // The logger stays silent on finish so the celebration can be sized
+        // here, where we know both the set count and whether it was a PR.
+        Celebration.exercise(sets: session.sets.count, isPersonalRecord: isPR)
+
+        if isPR, let name = session.exercise?.name {
             let e1rm = TrainingEngine.bestOneRepMax(in: session)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 prBannerText = "New \(name) PR — est. 1RM \(TrainingEngine.formatWeight(e1rm)) lb!"
             }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
             Task {
                 try? await Task.sleep(for: .seconds(5))
                 withAnimation { prBannerText = nil }
@@ -650,7 +656,7 @@ struct ExerciseLoggerView: View {
         restNotifyTask = Task {
             try? await Task.sleep(for: .seconds(restTarget))
             if !Task.isCancelled {
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Haptics.shared.play(.restComplete)
             }
         }
     }
@@ -721,6 +727,7 @@ struct ExerciseLoggerView: View {
                             .background(Color.appAccentSoft)
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    .hapticButton()
                     .accessibilityLabel("Plate calculator")
                 }
 
@@ -737,6 +744,7 @@ struct ExerciseLoggerView: View {
                                 .foregroundColor(delta > 0 ? .appSuccess : .appDanger)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
+                        .hapticButton(.tap, pressScale: 0.94)
                     }
                 }
             }
@@ -750,12 +758,12 @@ struct ExerciseLoggerView: View {
                 HStack(spacing: 16) {
                     Button {
                         if reps > 1 { reps -= 1 }
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Image(systemName: "minus.circle.fill")
                             .font(.system(size: 30))
                             .foregroundColor(.appAccent)
                     }
+                    .hapticButton(.tap, pressScale: 0.9)
                     Text("\(reps)")
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .monospacedDigit()
@@ -764,12 +772,12 @@ struct ExerciseLoggerView: View {
                         .contentTransition(.numericText())
                     Button {
                         reps += 1
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Image(systemName: "plus.circle.fill")
                             .font(.system(size: 30))
                             .foregroundColor(.appAccent)
                     }
+                    .hapticButton(.tap, pressScale: 0.9)
                 }
             }
 
@@ -786,7 +794,6 @@ struct ExerciseLoggerView: View {
                 Spacer()
                 DifficultyDots(rating: difficulty, size: 22, interactive: true) { tapped in
                     difficulty = tapped
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 }
             }
 
@@ -841,6 +848,7 @@ struct ExerciseLoggerView: View {
                 }
                 Slider(value: $intensity, in: 1...10, step: 1)
                     .tint(.appAccent)
+                    .onChange(of: intensity) { Haptics.shared.play(.detent) }
             }
         }
         .padding(16)
@@ -875,6 +883,7 @@ struct ExerciseLoggerView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .onChange(of: location) { Haptics.shared.play(.selection) }
 
             if !exercise.isCardio {
                 TextField("Machine settings (seat height, pin…)", text: $machineSettings)
@@ -918,6 +927,7 @@ struct ExerciseLoggerView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Use") { showingPlates = false }
+                        .hapticButton(.tap, pressScale: 1)
                 }
             }
         }
@@ -947,7 +957,6 @@ struct ExerciseLoggerView: View {
         let next = max(0, current + delta)
         weight = next
         weightText = TrainingEngine.formatWeight(next)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     /// Compares against the exercise's historical max: obvious typos
@@ -988,7 +997,7 @@ struct ExerciseLoggerView: View {
         setNotes = ""
         lastSetSavedAt = Date()
         startRestCountdown()
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Haptics.shared.play(.setLogged)
     }
 
     private func attemptFinish() {
@@ -1059,7 +1068,8 @@ struct ExerciseLoggerView: View {
         }
 
         try? context.save()
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        // The celebration is played by the caller, which knows whether this
+        // session was a PR and how big it was.
         onFinished(session)
         dismiss()
     }
@@ -1115,6 +1125,7 @@ struct ExercisePickerSheet: View {
                             ChipLabel(text: exercise.type.rawValue)
                         }
                     }
+                    .hapticButton(.tap, pressScale: 1)
                     .listRowBackground(themeManager.cardBackground)
                 }
 
@@ -1126,6 +1137,7 @@ struct ExercisePickerSheet: View {
                         Label("Create New Exercise", systemImage: "plus")
                             .foregroundColor(.appAccent)
                     }
+                    .hapticButton(.tap, pressScale: 1)
                     .listRowBackground(themeManager.cardBackground)
                 }
             }
@@ -1137,6 +1149,7 @@ struct ExercisePickerSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .hapticButton(.tap, pressScale: 1)
                 }
             }
             .alert("New Exercise", isPresented: $showingCreate) {
@@ -1241,6 +1254,18 @@ struct SessionSummaryView: View {
         }
         .padding(20)
         .background(themeManager.background.ignoresSafeArea())
+        .onAppear {
+            // The sheet's presentation animation is ~0.35s; starting the
+            // fanfare a beat in lets the seal land with the first burst.
+            Task {
+                try? await Task.sleep(for: .milliseconds(280))
+                Celebration.workout(
+                    exercises: sessions.count,
+                    sets: totalSets,
+                    personalRecords: prs.count
+                )
+            }
+        }
     }
 
     private func summaryTile(value: String, label: String) -> some View {

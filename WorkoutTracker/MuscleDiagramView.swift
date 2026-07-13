@@ -224,8 +224,10 @@ private struct MuscleMapPanel: View {
         guard let target = muscle.editorTarget(on: side), let selectedMuscles else { return }
         if selectedMuscles.wrappedValue.contains(target) {
             selectedMuscles.wrappedValue.remove(target)
+            Haptics.shared.play(.toggleOff)
         } else {
             selectedMuscles.wrappedValue.insert(target)
+            Haptics.shared.play(.toggleOn)
         }
     }
 }
