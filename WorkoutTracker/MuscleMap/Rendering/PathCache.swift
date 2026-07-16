@@ -20,7 +20,9 @@ final class PathCache: @unchecked Sendable {
         offsetX: CGFloat,
         offsetY: CGFloat
     ) -> Path {
-        let key = "\(svgPath.hashValue)-\(scale)-\(offsetX)-\(offsetY)"
+        // The full path string is the key — hashValue could (theoretically)
+        // collide and hand back the wrong muscle's path.
+        let key = "\(svgPath)|\(scale)|\(offsetX)|\(offsetY)"
 
         lock.lock()
         if let cached = cache[key] {
@@ -36,11 +38,5 @@ final class PathCache: @unchecked Sendable {
         lock.unlock()
 
         return built
-    }
-
-    func invalidate() {
-        lock.lock()
-        cache.removeAll()
-        lock.unlock()
     }
 }

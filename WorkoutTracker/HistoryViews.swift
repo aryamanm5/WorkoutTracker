@@ -8,7 +8,6 @@ struct DayDetailView: View {
     let date: Date
 
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
     @Query(sort: \ExerciseSession.date) private var allSessions: [ExerciseSession]
 
     @State private var sessionToDelete: ExerciseSession?
@@ -24,10 +23,10 @@ struct DayDetailView: View {
                     VStack(spacing: 10) {
                         Image(systemName: "moon.zzz.fill")
                             .font(.system(size: 36))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                         Text("Rest day — nothing logged.")
                             .appBodyStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 60)
@@ -53,28 +52,11 @@ struct DayDetailView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Delete this session?",
-            isPresented: Binding(
-                get: { sessionToDelete != nil },
-                set: { if !$0 { sessionToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Haptics.shared.play(.destructive)
-                if let session = sessionToDelete {
-                    context.delete(session)
-                    try? context.save()
-                }
-                sessionToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { sessionToDelete = nil }
-        } message: {
-            Text("This removes \(sessionToDelete?.exercise?.name ?? "the session") and all its sets.")
+        .deleteConfirmation("Delete this session?", item: $sessionToDelete, context: context) {
+            "This removes \($0.exercise?.name ?? "the session") and all its sets."
         }
     }
 
@@ -96,7 +78,6 @@ struct DayDetailView: View {
 
 struct SessionCard: View {
     let session: ExerciseSession
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         HStack(spacing: 14) {
@@ -110,7 +91,7 @@ struct SessionCard: View {
                     Text(session.exercise?.name ?? "Unknown")
                         .appBodyStyle()
                         .fontWeight(.semibold)
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     if TrainingEngine.isPersonalRecord(session) {
                         Image(systemName: "trophy.fill")
                             .font(.system(size: 12))
@@ -119,7 +100,7 @@ struct SessionCard: View {
                 }
                 Text(subtitle)
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             Spacer()
@@ -127,10 +108,10 @@ struct SessionCard: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(session.date.formatted(date: .omitted, time: .shortened))
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(14)
@@ -140,13 +121,13 @@ struct SessionCard: View {
     private var subtitle: String {
         if session.exercise?.isCardio == true {
             if let time = session.runningTime {
-                return "\(TrainingEngine.formatWeight(time)) min run"
+                return "\(time.formatted()) min run"
             }
             return "Cardio session"
         }
         let sets = session.sets.count
         if let top = session.sets.map(\.weight).max(), top > 0 {
-            return "\(sets) set\(sets == 1 ? "" : "s") · top \(TrainingEngine.formatWeight(top)) lb"
+            return "\(sets) set\(sets == 1 ? "" : "s") · top \(top.formatted()) lb"
         }
         return "\(sets) set\(sets == 1 ? "" : "s")"
     }
@@ -156,7 +137,6 @@ struct SessionCard: View {
 
 struct SessionDetailView: View {
     let session: ExerciseSession
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         ScrollView {
@@ -174,7 +154,7 @@ struct SessionDetailView: View {
                         SectionKicker(text: "Notes")
                         Text(session.notes)
                             .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                     }
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,7 +163,7 @@ struct SessionDetailView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(session.exercise?.name ?? "Session")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -203,7 +183,7 @@ struct SessionDetailView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.date.formatted(date: .complete, time: .shortened))
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     HStack(spacing: 8) {
                         ChipLabel(text: session.location.rawValue, color: .appCardio)
                         if TrainingEngine.isPersonalRecord(session) {
@@ -216,7 +196,7 @@ struct SessionDetailView: View {
             if !session.machineSettings.isEmpty {
                 Text("Machine: \(session.machineSettings)")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -234,12 +214,12 @@ struct SessionDetailView: View {
                         if let rest = set.restTimeSeconds {
                             Label("\(rest)s rest", systemImage: "timer")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                         }
                         if !set.notes.isEmpty {
                             Text(set.notes)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                                 .italic()
                         }
                     }
@@ -263,7 +243,7 @@ struct SessionDetailView: View {
                 HStack {
                     Text("Intensity")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Spacer()
                     Text("\(intensity)/10")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -282,11 +262,11 @@ struct SessionDetailView: View {
             HStack {
                 Text(label)
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Spacer()
-                Text("\(TrainingEngine.formatWeight(value)) \(unit)")
+                Text("\(value.formatted()) \(unit)")
                     .font(.system(size: 16, weight: .semibold, design: .rounded))
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
             }
         }
     }
@@ -295,7 +275,6 @@ struct SessionDetailView: View {
 // MARK: - Edit session
 
 struct EditSessionView: View {
-    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
 
@@ -311,6 +290,7 @@ struct EditSessionView: View {
     @State private var coolDownTime: Double? = nil
     @State private var runningSpeed: Double? = nil
     @State private var intensityRating: Double = 5.0
+    @State private var intensityEdited = false
 
     struct EditableSet: Identifiable {
         let id: UUID
@@ -361,7 +341,7 @@ struct EditSessionView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle("Edit Session")
         .navigationBarTitleDisplayMode(.inline)
         .dismissableKeyboard()
@@ -385,7 +365,7 @@ struct EditSessionView: View {
                 HStack {
                     Text("Intensity")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Spacer()
                     Text("\(Int(intensityRating))/10")
                         .fontWeight(.bold)
@@ -393,7 +373,10 @@ struct EditSessionView: View {
                 }
                 Slider(value: $intensityRating, in: 1...10, step: 1)
                     .tint(.appAccent)
-                    .onChange(of: intensityRating) { Haptics.shared.play(.detent) }
+                    .onChange(of: intensityRating) {
+                        intensityEdited = true
+                        Haptics.shared.play(.detent)
+                    }
             }
         }
         .padding(16)
@@ -405,7 +388,7 @@ struct EditSessionView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .appCaptionStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
             TextField("0", value: value, format: .number)
                 .keyboardType(.decimalPad)
                 .appInputStyle()
@@ -443,7 +426,7 @@ struct EditSessionView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Reps")
                                 .appCaptionStyle()
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                             TextField("0", value: $set.reps, format: .number)
                                 .keyboardType(.numberPad)
                                 .appInputStyle()
@@ -451,7 +434,7 @@ struct EditSessionView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Weight")
                                 .appCaptionStyle()
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                             TextField("0", value: $set.weight, format: .number)
                                 .keyboardType(.decimalPad)
                                 .appInputStyle()
@@ -461,7 +444,7 @@ struct EditSessionView: View {
                     HStack {
                         Text("Effort")
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                         Spacer()
                         DifficultyDots(rating: set.difficulty, size: 20, interactive: true) { newRating in
                             set.difficulty = newRating
@@ -542,7 +525,11 @@ struct EditSessionView: View {
             session.runningTime = runningTime
             session.coolDownTime = coolDownTime
             session.runningSpeed = runningSpeed
-            session.intensityRating = Int(intensityRating)
+            // Don't fabricate a rating on sessions that never had one unless
+            // the user actually moved the slider.
+            if session.intensityRating != nil || intensityEdited {
+                session.intensityRating = Int(intensityRating)
+            }
         } else {
             for oldSet in session.sets {
                 context.delete(oldSet)

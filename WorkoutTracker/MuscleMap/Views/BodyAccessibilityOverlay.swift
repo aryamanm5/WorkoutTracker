@@ -12,19 +12,16 @@ import SwiftUI
 /// An invisible overlay that exposes each visible muscle as an accessibility element for VoiceOver.
 struct BodyAccessibilityOverlay: View {
 
-    let gender: BodyGender
     let side: BodySide
     let highlights: [Muscle: MuscleHighlight]
     let style: BodyViewStyle
     let selectedMuscles: Set<Muscle>
     let size: CGSize
     let onMuscleSelected: ((Muscle, MuscleSide) -> Void)?
-    let onMuscleLongPressed: ((Muscle, MuscleSide) -> Void)?
     var hideSubGroups: Bool = true
 
     var body: some View {
         let renderer = BodyRenderer(
-            gender: gender,
             side: side,
             highlights: highlights,
             style: style,
@@ -39,14 +36,12 @@ struct BodyAccessibilityOverlay: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(NSLocalizedString("accessibility.bodyMap", bundle: .module, comment: ""))
+        .accessibilityLabel("Body muscle map")
     }
 
     @ViewBuilder
     private func accessibilityElement(for item: MuscleAccessibilityItem) -> some View {
         let isSelected = selectedMuscles.contains(item.muscle)
-        let valueKey = isSelected ? "accessibility.selected" : "accessibility.notSelected"
-        let hintKey = onMuscleLongPressed != nil ? "accessibility.hint.longPress" : "accessibility.hint.tap"
         let traits: AccessibilityTraits = isSelected ? [.isButton, .isSelected] : [.isButton]
 
         Color.clear
@@ -54,14 +49,11 @@ struct BodyAccessibilityOverlay: View {
             .position(x: item.rect.midX, y: item.rect.midY)
             .accessibilityElement()
             .accessibilityLabel(item.muscle.displayName)
-            .accessibilityValue(NSLocalizedString(valueKey, bundle: .module, comment: ""))
-            .accessibilityHint(NSLocalizedString(hintKey, bundle: .module, comment: ""))
+            .accessibilityValue(isSelected ? "Selected" : "Not selected")
+            .accessibilityHint("Double tap to select")
             .accessibilityAddTraits(traits)
             .accessibilityAction(.default) {
                 onMuscleSelected?(item.muscle, .both)
-            }
-            .accessibilityAction(named: Text(NSLocalizedString("accessibility.hint.longPress", bundle: .module, comment: ""))) {
-                onMuscleLongPressed?(item.muscle, .both)
             }
     }
 
@@ -70,12 +62,12 @@ struct BodyAccessibilityOverlay: View {
     /// Returns visible muscles sorted top-to-bottom for natural VoiceOver traversal.
     /// Excludes cosmetic parts (e.g., head).
     private func visibleMuscles(renderer: BodyRenderer) -> [MuscleAccessibilityItem] {
-        let bodyParts = BodyPathProvider.paths(gender: gender, side: side)
+        let bodyParts = BodyPathProvider.paths(side: side)
         var seen = Set<Muscle>()
         var items: [MuscleAccessibilityItem] = []
 
         for bodyPart in bodyParts {
-            guard let muscle = bodyPart.slug.muscle,
+            guard let muscle = bodyPart.muscle,
                   !muscle.isCosmeticPart,
                   !seen.contains(muscle) else { continue }
             if hideSubGroups && muscle.isSubGroup && !muscle.isAlwaysVisibleSubGroup { continue }

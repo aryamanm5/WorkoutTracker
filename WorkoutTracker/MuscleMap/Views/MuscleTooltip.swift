@@ -12,7 +12,6 @@ import SwiftUI
 /// An overlay that positions tooltip content above each selected muscle.
 struct MuscleTooltipOverlay: View {
 
-    let gender: BodyGender
     let side: BodySide
     let highlights: [Muscle: MuscleHighlight]
     let style: BodyViewStyle
@@ -24,7 +23,6 @@ struct MuscleTooltipOverlay: View {
     var body: some View {
         GeometryReader { geometry in
             let renderer = BodyRenderer(
-                gender: gender,
                 side: side,
                 highlights: highlights,
                 style: style,

@@ -5,7 +5,6 @@ import SwiftData
 /// weekly stats, quick logging, and the door into a live training session.
 struct TodayView: View {
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
 
     @Query(sort: \ExerciseSession.date, order: .reverse) private var sessions: [ExerciseSession]
     @Query private var workoutDays: [WorkoutDay]
@@ -33,7 +32,11 @@ struct TodayView: View {
     }
 
     private var thisWeeksSessions: [ExerciseSession] {
-        let cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+        // Window spans exactly 7 calendar days (today plus the previous 6) —
+        // a rolling 168-hour cutoff can straddle 8 days and overcount.
+        let cutoff = Calendar.current.startOfDay(
+            for: Calendar.current.date(byAdding: .day, value: -6, to: Date())!
+        )
         return sessions.filter { $0.date >= cutoff }
     }
 
@@ -53,7 +56,7 @@ struct TodayView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         }
         .fullScreenCover(isPresented: $showingSession) {
@@ -86,7 +89,7 @@ struct TodayView: View {
                 .textCase(.uppercase)
             Text(greeting)
                 .appLargeTitleStyle()
-                .foregroundColor(themeManager.primaryText)
+                .foregroundColor(Color.appPrimaryText)
         }
         .padding(.top, 12)
     }
@@ -115,7 +118,7 @@ struct TodayView: View {
                          ? recommendation.reason
                          : "Your call — coach suggested \(recommendation.type.rawValue.lowercased()), but you know your body best.")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -148,39 +151,27 @@ struct TodayView: View {
                     .foregroundColor(.appSuccess)
                 Text("Trained Today")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
             }
             Text("\(names.count) exercise\(names.count == 1 ? "" : "s")\(volume > 0 ? " · \(Int(volume).formatted()) lb moved" : "")")
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
     }
 
     /// Where you're training decides which exercise library, coach history,
     /// and charts the session uses — pick it before starting.
     private var locationToggle: some View {
-        HStack(spacing: 8) {
+        Picker("Training location", selection: Binding(
+            get: { trainingLocation },
+            set: { preferredLocationRaw = $0.rawValue }
+        )) {
             ForEach(WorkoutLocation.allCases) { loc in
-                let isSelected = trainingLocation == loc
-                Button {
-                    preferredLocationRaw = loc.rawValue
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: loc.icon)
-                            .font(.system(size: 12, weight: .bold))
-                        Text(loc.rawValue)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
-                    }
-                    .foregroundColor(isSelected ? .white : themeManager.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 9)
-                    .background(isSelected ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
-                    .clipShape(Capsule())
-                }
-                .hapticButton(.selection)
-                .accessibilityIdentifier("location_\(loc == .home ? "home" : "gym")")
+                Text(loc.rawValue).tag(loc)
             }
         }
+        .pickerStyle(.segmented)
+        .onChange(of: trainingLocation) { Haptics.shared.play(.selection) }
     }
 
     private var focusSwitcher: some View {
@@ -243,7 +234,7 @@ struct TodayView: View {
             StatTile(
                 icon: "scalemass.fill",
                 iconColor: .appSuccess,
-                value: weightEntries.first.map { TrainingEngine.formatWeight($0.weight) } ?? "—",
+                value: weightEntries.first.map { $0.weight.formatted() } ?? "—",
                 label: "Body Weight"
             )
         }
@@ -258,7 +249,7 @@ struct TodayView: View {
                 Spacer()
                 Text("Last 72h")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             MuscleDiagramView(intensities: TrainingEngine.muscleFatigue(sessions: sessions))
         }
@@ -284,19 +275,19 @@ struct TodayView: View {
                         Text(pr.exerciseName)
                             .appBodyStyle()
                             .fontWeight(.semibold)
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                         Text(pr.date.formatted(.dateTime.month(.abbreviated).day()))
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(TrainingEngine.formatWeight(pr.oneRepMax)) lb")
+                        Text("\(pr.oneRepMax.formatted()) lb")
                             .font(.system(size: 16, weight: .bold, design: .rounded))
                             .foregroundColor(.appAccent)
                         Text("est. 1RM")
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                 }
             }
@@ -368,33 +359,34 @@ func updateCreatineStatus(on date: Date, took: Bool, context: ModelContext, days
     if let existing = days.first(where: { calendar.isDate($0.date, inSameDayAs: date) }) {
         existing.tookCreatine = took
     } else {
-        let day = WorkoutDay(date: date, type: .rest, tookCreatine: took)
+        let day = WorkoutDay(date: date, tookCreatine: took)
         context.insert(day)
     }
     try? context.save()
 }
 
 struct StatTile: View {
-    let icon: String
-    let iconColor: Color
+    var icon: String? = nil
+    var iconColor: Color = .appAccent
     let value: String
     let label: String
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundColor(iconColor)
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundColor(iconColor)
+            }
             Text(value)
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundColor(themeManager.primaryText)
+                .foregroundColor(Color.appPrimaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
@@ -409,7 +401,6 @@ struct StatTile: View {
 struct QuickWeightSheet: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var themeManager: ThemeManager
     @Query(sort: \BodyWeightEntry.date, order: .reverse) private var entries: [BodyWeightEntry]
 
     @State private var weightText = ""
@@ -426,7 +417,7 @@ struct QuickWeightSheet: View {
                         .appInputStyle()
                     Text("lb")
                         .appHeadingStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
 
                 TextField("Notes (optional)", text: $notes)
@@ -439,7 +430,7 @@ struct QuickWeightSheet: View {
                 Spacer()
             }
             .padding(20)
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Log Weight")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

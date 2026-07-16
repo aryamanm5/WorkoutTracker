@@ -1,6 +1,5 @@
 import CoreHaptics
 import SwiftUI
-import UIKit
 
 // MARK: - Haptic design system
 //
@@ -67,7 +66,6 @@ enum HapticPattern {
     /// Slider detents.
     case detent
     case warning
-    case error
     /// Rest timer finishing: a polite two-note rise.
     case restComplete
 
@@ -120,9 +118,6 @@ enum HapticPattern {
 
         case .warning:
             return [tick(0, 0.65, 0.3), tick(0.13, 0.65, 0.3)]
-
-        case .error:
-            return [tick(0, 0.9, 0.2), tick(0.08, 0.9, 0.2), tick(0.16, 0.55, 0.2)]
 
         case .restComplete:
             return [tick(0, 0.6, 0.5), tick(0.09, 0.9, 0.75)]
@@ -200,9 +195,9 @@ enum HapticPattern {
 
 // MARK: - Engine
 
-/// Plays `HapticPattern`s through Core Haptics, falling back to the UIKit
-/// feedback generators on hardware without the full haptic engine (older
-/// devices, and iPad).
+/// Plays `HapticPattern`s through Core Haptics.
+/// ponytail: no UIKit fallback — every iPhone on iOS 26 has Core Haptics and
+/// iPads have no haptic motor at all; a failed engine play is a dropped tap.
 @MainActor
 final class Haptics {
     static let shared = Haptics()
@@ -214,9 +209,6 @@ final class Haptics {
 
     private let supportsCoreHaptics = CHHapticEngine.capabilitiesForHardware().supportsHaptics
     private var engine: CHHapticEngine?
-    /// Players are cheap to make but not free; celebrations are long enough
-    /// that rebuilding one mid-tap would be audible, so keep them around.
-    private var players: [String: CHHapticPatternPlayer] = [:]
 
     private init() {}
 
@@ -235,9 +227,8 @@ final class Haptics {
                 // each play brings it back.
                 engine.isAutoShutdownEnabled = true
                 engine.resetHandler = { [weak self] in
-                    // The server restarted underneath us: our players are dead.
+                    // The haptic server restarted underneath us; bring the engine back.
                     Task { @MainActor in
-                        self?.players.removeAll()
                         try? self?.engine?.start()
                     }
                 }
@@ -258,42 +249,18 @@ final class Haptics {
     /// intensity, which is how the same celebration can feel bigger after a
     /// harder workout without becoming a different pattern.
     func play(_ pattern: HapticPattern, scale: Float = 1) {
-        guard Self.isEnabled else { return }
+        guard Self.isEnabled, supportsCoreHaptics, let engine else { return }
 
         let scale = min(max(scale, 0.2), 1.4)
-        guard supportsCoreHaptics, playWithEngine(pattern, scale: scale) else {
-            playFallback(pattern, scale: scale)
-            return
-        }
-    }
-
-    /// - Returns: `false` if the engine could not play it, so the caller can
-    ///   fall back rather than leaving the tap silent.
-    private func playWithEngine(_ pattern: HapticPattern, scale: Float) -> Bool {
-        guard let engine else { return false }
-
         do {
             try engine.start()
-
-            // Scaled patterns are one-shot; unscaled ones are the common case
-            // and worth caching.
-            let cacheKey = scale == 1 ? "\(pattern)" : nil
-            let player: CHHapticPatternPlayer
-            if let cacheKey, let cached = players[cacheKey] {
-                player = cached
-            } else {
-                player = try engine.makePlayer(with: build(pattern, scale: scale))
-                if let cacheKey { players[cacheKey] = player }
-            }
+            let player = try engine.makePlayer(with: build(pattern, scale: scale))
             try player.start(atTime: CHHapticTimeImmediate)
-            return true
         } catch {
-            // A failed play usually means the engine died; drop it so the next
-            // `prepare()` rebuilds, and let this tap go out through UIKit.
-            players.removeAll()
+            // A failed play usually means the engine died; drop it so the
+            // next `prepare()` rebuilds it.
             engine.stop()
             self.engine = nil
-            return false
         }
     }
 
@@ -371,48 +338,6 @@ final class Haptics {
     private func boosted(_ value: Float) -> Float {
         let v = clamp(value)
         return 1 - (1 - v) * (1 - v)
-    }
-
-    // MARK: UIKit fallback
-
-    /// Approximates a pattern with the canned generators: transients become
-    /// impacts at matching intensity, continuous swells are dropped (they carry
-    /// texture, not information). Timing is preserved so the rhythm survives.
-    private func playFallback(_ pattern: HapticPattern, scale: Float) {
-        switch pattern {
-        case .warning:
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            return
-        case .error:
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
-            return
-        case .selection, .detent:
-            UISelectionFeedbackGenerator().selectionChanged()
-            return
-        default:
-            break
-        }
-
-        for step in pattern.steps {
-            guard case .transient = step.kind else { continue }
-            let intensity = CGFloat(boosted(step.intensity * scale))
-            let style: UIImpactFeedbackGenerator.FeedbackStyle
-            switch step.sharpness {
-            case ..<0.35: style = step.intensity > 0.6 ? .heavy : .soft
-            case ..<0.7: style = step.intensity > 0.5 ? .heavy : .medium
-            default: style = .rigid
-            }
-
-            let generator = UIImpactFeedbackGenerator(style: style)
-            generator.prepare()
-            if step.time <= 0 {
-                generator.impactOccurred(intensity: intensity)
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + step.time) {
-                    generator.impactOccurred(intensity: intensity)
-                }
-            }
-        }
     }
 }
 

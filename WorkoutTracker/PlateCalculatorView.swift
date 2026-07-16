@@ -74,14 +74,21 @@ enum BarOption: String, CaseIterable, Identifiable {
 }
 
 struct PlateCalculatorView: View {
-    @EnvironmentObject var themeManager: ThemeManager
     @Binding var weight: Double?
     let exerciseName: String
 
     @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
 
-    @State private var barOption: BarOption = .barbell
+    @State private var barOption: BarOption
     @State private var plates: [PlateInstance] = []
+
+    init(weight: Binding<Double?>, exerciseName: String) {
+        _weight = weight
+        self.exerciseName = exerciseName
+        // Seeded here, not in onAppear — a programmatic change there would
+        // trip onChange(of: barOption) and rewrite the bound weight.
+        _barOption = State(initialValue: BarOption.defaultOption(for: exerciseName))
+    }
 
     struct PlateInstance: Identifiable {
         let id = UUID()
@@ -110,11 +117,11 @@ struct PlateCalculatorView: View {
                         .contentTransition(.numericText())
                     Text("lbs")
                         .font(.headline)
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 Text("\(barOption.rawValue) \(String(format: "%g", barWeight)) lbs + plates per side")
                     .font(.caption)
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: totalWeight)
 
@@ -193,14 +200,16 @@ struct PlateCalculatorView: View {
         .padding()
         .appCard()
         .onAppear {
-            barOption = BarOption.defaultOption(for: exerciseName)
+            // Seed the display from the current weight but never write back —
+            // just opening the sheet must not round 187 down to 185 (or bump
+            // a sub-bar weight up to the empty bar). The weight only changes
+            // when the user actually adds/removes plates.
             if let currentWeight = weight, currentWeight > barWeight {
                 decomposeIntoPlates(target: currentWeight)
             }
-            weight = totalWeight
         }
         .onChange(of: barOption) {
-            weight = totalWeight
+            if !plates.isEmpty { weight = totalWeight }
         }
     }
 
@@ -243,15 +252,16 @@ struct PlateCalculatorView: View {
         plates = newPlates
     }
 
-    private func plateColor(for val: Double) -> Color {
-        switch val {
-        case 45: return Color.red.opacity(0.9)
-        case 35: return Color.blue.opacity(0.9)
-        case 25: return Color.green.opacity(0.9)
-        case 10: return Color(white: 0.25)
-        case 5: return Color(white: 0.25)
-        default: return Color.gray
-        }
+}
+
+/// Gym-standard plate color, shared by the picker buttons and the bar visual.
+private func plateColor(for val: Double) -> Color {
+    switch val {
+    case 45: return Color.red.opacity(0.9)
+    case 35: return Color.blue.opacity(0.9)
+    case 25: return Color.green.opacity(0.9)
+    case 10, 5: return Color(white: 0.25)
+    default: return Color.gray
     }
 }
 
@@ -261,7 +271,7 @@ struct PlateVisual: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4)
-                .fill(plateColor)
+                .fill(plateColor(for: val))
                 .frame(width: thickness, height: height)
                 .shadow(color: .black.opacity(0.3), radius: 1, x: 2, y: 0)
 
@@ -293,14 +303,4 @@ struct PlateVisual: View {
         }
     }
 
-    var plateColor: Color {
-        switch val {
-        case 45: return Color.red.opacity(0.9)
-        case 35: return Color.blue.opacity(0.9)
-        case 25: return Color.green.opacity(0.9)
-        case 10: return Color.black.opacity(0.8)
-        case 5: return Color.black.opacity(0.8)
-        default: return Color.gray
-        }
-    }
 }

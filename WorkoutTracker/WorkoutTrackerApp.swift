@@ -4,7 +4,6 @@ import SwiftData
 @main
 struct WorkoutTrackerApp: App {
     let container: ModelContainer
-    @State private var viewModel = WorkoutViewModel()
     @StateObject private var themeManager = ThemeManager()
 
     init() {
@@ -14,8 +13,6 @@ struct WorkoutTrackerApp: App {
             resetDataIfRequested(context: container.mainContext)
             #endif
             seedInitialData(context: container.mainContext)
-            mergeDuplicateExercises(context: container.mainContext)
-            migrateMuscleTargetsIfNeeded(context: container.mainContext)
             #if DEBUG
             seedDemoDataIfRequested(context: container.mainContext)
             #endif
@@ -29,11 +26,9 @@ struct WorkoutTrackerApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environment(viewModel)
                 .environmentObject(themeManager)
                 .modelContainer(container)
                 .onAppear {
-                    viewModel.processMissingDays(context: container.mainContext)
                     Haptics.shared.prepare()
                 }
         }
@@ -109,54 +104,6 @@ struct WorkoutTrackerApp: App {
         try? context.save()
     }
     #endif
-
-    /// Earlier CSV imports created a duplicate Exercise per imported row.
-    /// Merge exercises that share a name (case-insensitive) into one,
-    /// moving their sessions over before deleting the extras. Home and gym
-    /// libraries are separate, so the same name may exist once per location.
-    private func mergeDuplicateExercises(context: ModelContext) {
-        guard let exercises = try? context.fetch(FetchDescriptor<Exercise>()) else { return }
-
-        var keepers: [String: Exercise] = [:]
-        var duplicates: [Exercise] = []
-
-        for exercise in exercises.sorted(by: { $0.sessions.count > $1.sessions.count }) {
-            let key = "\(exercise.name.lowercased())|\(exercise.location.rawValue)"
-            if let keeper = keepers[key] {
-                for session in exercise.sessions {
-                    session.exercise = keeper
-                }
-                duplicates.append(exercise)
-            } else {
-                keepers[key] = exercise
-            }
-        }
-
-        guard !duplicates.isEmpty else { return }
-        for duplicate in duplicates {
-            context.delete(duplicate)
-        }
-        try? context.save()
-    }
-
-    /// Muscle targets saved before the catalog fix contain incorrect defaults
-    /// (e.g. "Rear Delt Fly" tagged as chest). Recompute them once.
-    private func migrateMuscleTargetsIfNeeded(context: ModelContext) {
-        let migrationKey = "didMigrateMuscleTargets_v2"
-        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
-
-        if let exercises = try? context.fetch(FetchDescriptor<Exercise>()) {
-            for exercise in exercises {
-                exercise.targetMuscles = MuscleCatalog.defaultTargets(
-                    for: exercise.name,
-                    type: exercise.type,
-                    isCardio: exercise.isCardio
-                )
-            }
-            try? context.save()
-        }
-        UserDefaults.standard.set(true, forKey: migrationKey)
-    }
 
     private func seedInitialData(context: ModelContext) {
         let fetchDescriptor = FetchDescriptor<Exercise>()

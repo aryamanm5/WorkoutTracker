@@ -40,7 +40,7 @@ struct SettingsView: View {
                 .padding(16)
                 .padding(.bottom, 24)
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .dismissableKeyboard()
@@ -77,7 +77,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Coach goal")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Picker("Coach goal", selection: $trainingGoal) {
                     ForEach(TrainingEngine.TrainingGoal.allCases) { goal in
                         Text(goal.displayName).tag(goal)
@@ -89,7 +89,7 @@ struct SettingsView: View {
                      ? "Adds weight once every set hits 12 reps in the 8–12 range."
                      : "Adds weight every session you finish all sets at 5+ reps.")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             Divider()
@@ -97,7 +97,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Rest timer")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Picker("Rest timer", selection: $restTarget) {
                     ForEach(restOptions, id: \.self) { seconds in
                         Text("\(seconds)s").tag(seconds)
@@ -107,7 +107,7 @@ struct SettingsView: View {
                 .onChange(of: restTarget) { Haptics.shared.play(.selection) }
                 Text("Countdown between sets during a live session.")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             Divider()
@@ -116,10 +116,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Leg press sled")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     Text("Starting weight for plate math")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 Spacer()
                 TextField("167", value: $legPressSledWeight, format: .number)
@@ -129,7 +129,7 @@ struct SettingsView: View {
                     .appInputStyle()
                 Text("lb")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -146,7 +146,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Dark Mode")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Picker("Dark Mode", selection: $themeManager.appearance) {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(appearance.rawValue).tag(appearance)
@@ -159,7 +159,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Theme")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 HStack(spacing: 10) {
                     ForEach(AppTheme.allCases) { theme in
                         themeSwatch(theme)
@@ -170,7 +170,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Font")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Picker("Font", selection: $themeManager.selectedFont) {
                     ForEach(AppFontChoice.allCases) { font in
                         Text(font.rawValue).tag(font)
@@ -186,10 +186,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Haptics")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     Text("Taps on buttons, and a celebration when you finish")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
             }
             .tint(.appAccent)
@@ -225,7 +225,7 @@ struct SettingsView: View {
                     .fill(theme.swatchGradient)
                     .frame(width: 34, height: 34)
                     .overlay(
-                        Circle().stroke(themeManager.primaryText, lineWidth: selected ? 2.5 : 0)
+                        Circle().stroke(Color.appPrimaryText, lineWidth: selected ? 2.5 : 0)
                             .padding(-3)
                     )
                     .overlay(
@@ -236,7 +236,7 @@ struct SettingsView: View {
                     )
                 Text(theme.displayName)
                     .font(.system(size: 11, weight: selected ? .bold : .medium))
-                    .foregroundColor(selected ? themeManager.primaryText : themeManager.secondaryText)
+                    .foregroundColor(selected ? Color.appPrimaryText : Color.appSecondaryText)
             }
             .frame(maxWidth: .infinity)
         }
@@ -253,10 +253,10 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Progress photos")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     Text("Show the photo timeline on the Body tab")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
             }
             .tint(.appAccent)
@@ -271,12 +271,12 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Lock behind password")
                             .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                         Text(progressPhotosLockEnabled
                              ? "Photos stay hidden until you enter it"
                              : "Keep photos out of sight when someone borrows your phone")
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                 }
                 .tint(.appAccent)
@@ -416,15 +416,15 @@ struct SettingsView: View {
                 Text(title)
                     .appBodyStyle()
                     .fontWeight(.semibold)
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Text(subtitle)
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
@@ -435,8 +435,12 @@ struct SettingsView: View {
     private func exportToCSV() {
         var csvString = "Date,Exercise,Type,IsCardio,Location,SetNumber,Reps,Weight(lbs),Difficulty,RestTime(s),SetNotes,MachineSettings,WarmUp(min),Run(min),CoolDown(min),Speed,Intensity,SessionNotes\n"
 
+        // POSIX locale so 12/24-hour overrides and non-Gregorian device
+        // calendars can't corrupt the exported dates. Seconds precision keeps
+        // distinct same-minute sessions distinct on re-import.
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
 
         // Fetch fresh with relationships faulted in
         let descriptor = FetchDescriptor<ExerciseSession>(
@@ -542,8 +546,17 @@ struct SettingsView: View {
         var setsImported = 0
         var weightsImported = 0
         var duplicatesSkipped = 0
+        // Accept both the current seconds-precision format and the legacy
+        // minute-precision one from older exports.
         let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let legacyDateFormatter = DateFormatter()
+        legacyDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        legacyDateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
+        func parseDate(_ text: String) -> Date? {
+            dateFormatter.date(from: text) ?? legacyDateFormatter.date(from: text)
+        }
 
         // Look up exercises against the live context (the view's @Query snapshot
         // doesn't refresh mid-import, which used to duplicate every exercise),
@@ -562,7 +575,7 @@ struct SettingsView: View {
         }
         if let storedWeights = try? context.fetch(FetchDescriptor<BodyWeightEntry>()) {
             for entry in storedWeights {
-                existingWeightKeys.insert("\(entry.date.timeIntervalSince1970)|\(entry.weight)")
+                existingWeightKeys.insert(weightDedupKey(date: entry.date, weight: entry.weight))
             }
         }
 
@@ -579,7 +592,7 @@ struct SettingsView: View {
                         break
                     }
                     guard let dateText = value(in: workoutRow, header: header, column: "Date"),
-                          let date = dateFormatter.date(from: dateText),
+                          let date = parseDate(dateText),
                           let exerciseName = value(in: workoutRow, header: header, column: "Exercise"),
                           !exerciseName.isEmpty,
                           let typeText = value(in: workoutRow, header: header, column: "Type") else {
@@ -650,12 +663,14 @@ struct SettingsView: View {
                     }
 
                     guard let dateText = value(in: weightRow, header: header, column: "Date"),
-                          let date = dateFormatter.date(from: dateText),
+                          let date = parseDate(dateText),
                           let weight = doubleValue(in: weightRow, header: header, column: "Weight(lbs)") else {
-                        break
+                        // Skip the malformed row but keep importing the rest.
+                        index += 1
+                        continue
                     }
 
-                    let weightKey = "\(date.timeIntervalSince1970)|\(weight)"
+                    let weightKey = weightDedupKey(date: date, weight: weight)
                     if existingWeightKeys.contains(weightKey) {
                         duplicatesSkipped += 1
                         index += 1
@@ -680,8 +695,15 @@ struct SettingsView: View {
         return (sessionsImported, setsImported, weightsImported, duplicatesSkipped)
     }
 
+    /// Dedup compares at minute precision: stored dates carry sub-second
+    /// precision and legacy exports only carry minutes, so exact-timestamp
+    /// keys never matched and every re-import duplicated the whole file.
     private func sessionDedupKey(exerciseName: String, date: Date) -> String {
-        "\(exerciseName.lowercased())|\(date.timeIntervalSince1970)"
+        "\(exerciseName.lowercased())|\(Int(date.timeIntervalSince1970 / 60))"
+    }
+
+    private func weightDedupKey(date: Date, weight: Double) -> String {
+        "\(Int(date.timeIntervalSince1970 / 60))|\(weight)"
     }
 
     private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool, location: WorkoutLocation, cache: inout [String: Exercise]) -> Exercise {
@@ -689,8 +711,8 @@ struct SettingsView: View {
         // once per location.
         let key = "\(name.lowercased())|\(location.rawValue)"
         if let existing = cache[key] {
-            existing.isCardio = isCardio
-            existing.type = type
+            // Never mutate an existing library entry from imported rows — an
+            // old export would silently undo later re-categorization.
             return existing
         }
 
@@ -701,7 +723,10 @@ struct SettingsView: View {
     }
 
     private func headerMap(_ row: [String]) -> [String: Int] {
-        Dictionary(uniqueKeysWithValues: row.enumerated().map { ($0.element, $0.offset) })
+        // First occurrence wins — `uniqueKeysWithValues` would crash the app
+        // on a hand-edited file with a repeated column name.
+        Dictionary(row.enumerated().map { ($0.element, $0.offset) },
+                   uniquingKeysWith: { first, _ in first })
     }
 
     private func value(in row: [String], header: [String: Int], column: String) -> String? {
@@ -795,7 +820,7 @@ struct ManageExercisesView: View {
                     if !atLocation.isEmpty {
                         Label(location.rawValue, systemImage: location.icon)
                             .appHeadingStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                             .padding(.top, 4)
                     }
                     ForEach([WorkoutType.push, .pull, .legs], id: \.self) { type in
@@ -832,7 +857,7 @@ struct ManageExercisesView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle("Exercises")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -849,25 +874,8 @@ struct ManageExercisesView: View {
                 .themedPresentation()
                 .presentationDetents([.medium])
         }
-        .confirmationDialog(
-            "Delete \(exerciseToDelete?.name ?? "exercise")?",
-            isPresented: Binding(
-                get: { exerciseToDelete != nil },
-                set: { if !$0 { exerciseToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Haptics.shared.play(.destructive)
-                if let exercise = exerciseToDelete {
-                    context.delete(exercise)
-                    try? context.save()
-                }
-                exerciseToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { exerciseToDelete = nil }
-        } message: {
-            Text("This also deletes all its logged history.")
+        .deleteConfirmation("Delete \(exerciseToDelete?.name ?? "exercise")?", item: $exerciseToDelete, context: context) { _ in
+            "This also deletes all its logged history."
         }
     }
 
@@ -881,16 +889,16 @@ struct ManageExercisesView: View {
                 Text(exercise.name)
                     .appBodyStyle()
                     .fontWeight(.semibold)
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Text(exercise.targetMuscles.map(\.displayName).sorted().joined(separator: ", "))
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                     .lineLimit(1)
             }
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
@@ -919,7 +927,7 @@ struct ManageExercisesView: View {
                 Toggle("Cardio exercise", isOn: $newIsCardio)
                     .tint(.appAccent)
                     .padding(12)
-                    .background(themeManager.inputBackground)
+                    .background(Color.appInputBackground)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
 
                 Button("Add Exercise") {
@@ -937,7 +945,7 @@ struct ManageExercisesView: View {
                 Spacer()
             }
             .padding(20)
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("New Exercise")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -989,10 +997,10 @@ struct ExerciseMuscleEditorView: View {
                             } label: {
                                 Text(muscle.displayName)
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(isOn ? .white : themeManager.primaryText)
+                                    .foregroundColor(isOn ? .white : Color.appPrimaryText)
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 8)
-                                    .background(isOn ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(themeManager.inputBackground))
+                                    .background(isOn ? AnyShapeStyle(Color.appAccent) : AnyShapeStyle(Color.appInputBackground))
                                     .clipShape(Capsule())
                             }
                             .hapticButton(isOn ? .toggleOff : .toggleOn, pressScale: 0.94)
@@ -1005,7 +1013,7 @@ struct ExerciseMuscleEditorView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -1056,12 +1064,12 @@ struct AddHistoricalWorkoutView: View {
 
                     DatePicker("Date", selection: $date, in: ...Date())
                         .tint(.appAccent)
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
 
                     HStack {
                         Text("Exercise")
                             .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                         Spacer()
                         Menu {
                             ForEach(WorkoutLocation.allCases) { loc in
@@ -1111,7 +1119,7 @@ struct AddHistoricalWorkoutView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle("Log Past Workout")
         .navigationBarTitleDisplayMode(.inline)
         .dismissableKeyboard()
@@ -1125,7 +1133,7 @@ struct AddHistoricalWorkoutView: View {
                     Stepper(value: $set.reps, in: 1...50) {
                         Text("\(set.reps) reps")
                             .appBodyStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                     }
                     .fixedSize()
                     .onChange(of: set.reps) { Haptics.shared.play(.tap) }
@@ -1172,7 +1180,7 @@ struct AddHistoricalWorkoutView: View {
             HStack {
                 Text("Intensity")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Slider(value: $intensity, in: 1...10, step: 1)
                     .tint(.appAccent)
                     .onChange(of: intensity) { Haptics.shared.play(.detent) }
@@ -1190,7 +1198,7 @@ struct AddHistoricalWorkoutView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .appCaptionStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
             TextField("0", text: text)
                 .keyboardType(.decimalPad)
                 .appInputStyle()
@@ -1207,10 +1215,10 @@ struct AddHistoricalWorkoutView: View {
             totalSets: isCardio ? 0 : sets.count,
             notes: notes,
             location: location,
-            warmUpTime: isCardio ? Double(warmUpTime) : nil,
-            runningTime: isCardio ? Double(runningTime) : nil,
-            coolDownTime: isCardio ? Double(coolDownTime) : nil,
-            runningSpeed: isCardio ? Double(runningSpeed) : nil,
+            warmUpTime: isCardio ? Double(userInput: warmUpTime) : nil,
+            runningTime: isCardio ? Double(userInput: runningTime) : nil,
+            coolDownTime: isCardio ? Double(userInput: coolDownTime) : nil,
+            runningSpeed: isCardio ? Double(userInput: runningSpeed) : nil,
             intensityRating: isCardio ? Int(intensity) : nil
         )
         context.insert(session)

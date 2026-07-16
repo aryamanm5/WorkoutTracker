@@ -10,14 +10,15 @@
 import Foundation
 
 /// SVG path data for a single body part, supporting common, left, and right sub-paths.
+/// `muscle` is nil for cosmetic hair paths.
 struct BodyPartPathData {
-    let slug: BodySlug
+    let muscle: Muscle?
     let common: [String]
     let left: [String]
     let right: [String]
 
-    init(slug: BodySlug, common: [String] = [], left: [String] = [], right: [String] = []) {
-        self.slug = slug
+    init(muscle: Muscle?, common: [String] = [], left: [String] = [], right: [String] = []) {
+        self.muscle = muscle
         self.common = common
         self.left = left
         self.right = right
@@ -34,10 +35,6 @@ struct BodyViewBox {
     let origin: CGPoint
     let size: CGSize
 
-    var rect: CGRect {
-        CGRect(origin: origin, size: size)
-    }
-
     static let maleFront = BodyViewBox(
         origin: CGPoint(x: 0, y: 95),
         size: CGSize(width: 727, height: 1280)
@@ -47,37 +44,16 @@ struct BodyViewBox {
         origin: CGPoint(x: 718, y: 95),
         size: CGSize(width: 727, height: 1280)
     )
-
-    static let femaleFront = BodyViewBox(
-        origin: CGPoint(x: 0, y: 0),
-        size: CGSize(width: 650, height: 1450)
-    )
-
-    static let femaleBack = BodyViewBox(
-        origin: CGPoint(x: 823, y: 0),
-        size: CGSize(width: 650, height: 1450)
-    )
-
 }
 
-/// Provides body path data for a given gender and side.
+/// Provides body path data for a given side.
 struct BodyPathProvider {
 
-    static func paths(gender: BodyGender, side: BodySide) -> [BodyPartPathData] {
-        switch (gender, side) {
-        case (.male, .front): return MaleFrontPaths.paths
-        case (.male, .back): return MaleBackPaths.paths
-        case (.female, .front): return FemaleFrontPaths.paths
-        case (.female, .back): return FemaleBackPaths.paths
-        }
+    static func paths(side: BodySide) -> [BodyPartPathData] {
+        side == .front ? MaleFrontPaths.paths : MaleBackPaths.paths
     }
 
-    static func viewBox(gender: BodyGender, side: BodySide) -> BodyViewBox {
-        switch (gender, side) {
-        case (.male, .front): return .maleFront
-        case (.male, .back): return .maleBack
-        case (.female, .front): return .femaleFront
-        case (.female, .back): return .femaleBack
-        }
+    static func viewBox(side: BodySide) -> BodyViewBox {
+        side == .front ? .maleFront : .maleBack
     }
 }

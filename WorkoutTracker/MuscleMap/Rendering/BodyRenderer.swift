@@ -11,7 +11,6 @@ import SwiftUI
 
 struct BodyRenderer {
 
-    let gender: BodyGender
     let side: BodySide
     let highlights: [Muscle: MuscleHighlight]
     let style: BodyViewStyle
@@ -19,9 +18,7 @@ struct BodyRenderer {
     var selectionPulseFactor: Double = 1.0
     let hideSubGroups: Bool
 
-    /// Primary initializer with multi-select support.
     init(
-        gender: BodyGender,
         side: BodySide,
         highlights: [Muscle: MuscleHighlight],
         style: BodyViewStyle,
@@ -29,7 +26,6 @@ struct BodyRenderer {
         selectionPulseFactor: Double = 1.0,
         hideSubGroups: Bool = true
     ) {
-        self.gender = gender
         self.side = side
         self.highlights = highlights
         self.style = style
@@ -38,108 +34,67 @@ struct BodyRenderer {
         self.hideSubGroups = hideSubGroups
     }
 
-    /// Backward-compatible initializer accepting optional single muscle.
-    init(
-        gender: BodyGender,
-        side: BodySide,
-        highlights: [Muscle: MuscleHighlight],
-        style: BodyViewStyle,
-        selectedMuscle: Muscle?,
-        selectionPulseFactor: Double = 1.0,
-        hideSubGroups: Bool = true
-    ) {
-        self.init(
-            gender: gender,
-            side: side,
-            highlights: highlights,
-            style: style,
-            selectedMuscles: selectedMuscle.map { Set([$0]) } ?? [],
-            selectionPulseFactor: selectionPulseFactor,
-            hideSubGroups: hideSubGroups
-        )
-    }
+    // Shared across renderer instances — they are rebuilt every render pass,
+    // so a per-instance cache would never hit.
+    private static let pathCache = PathCache()
 
-    private let pathCache = PathCache()
-
-    func render(context: inout GraphicsContext, size: CGSize) {
-        let viewBox = BodyPathProvider.viewBox(gender: gender, side: side)
+    /// ViewBox-to-view transform parameters for the given view size.
+    private func layout(in size: CGSize) -> (scale: CGFloat, offsetX: CGFloat, offsetY: CGFloat) {
+        let viewBox = BodyPathProvider.viewBox(side: side)
         let scale = min(
             size.width / viewBox.size.width,
             size.height / viewBox.size.height
         )
         let offsetX = (size.width - viewBox.size.width * scale) / 2 - viewBox.origin.x * scale
         let offsetY = (size.height - viewBox.size.height * scale) / 2 - viewBox.origin.y * scale
+        return (scale, offsetX, offsetY)
+    }
 
-        let bodyParts = BodyPathProvider.paths(gender: gender, side: side)
-        let hasShadow = style.shadowRadius > 0
+    private func cachedPath(_ pathString: String, _ layout: (scale: CGFloat, offsetX: CGFloat, offsetY: CGFloat)) -> Path {
+        Self.pathCache.path(for: pathString, scale: layout.scale, offsetX: layout.offsetX, offsetY: layout.offsetY)
+    }
+
+    func render(context: inout GraphicsContext, size: CGSize) {
+        let layout = layout(in: size)
+        let bodyParts = BodyPathProvider.paths(side: side)
 
         for bodyPart in bodyParts {
-            if hideSubGroups, let m = bodyPart.slug.muscle, m.isSubGroup, !m.isAlwaysVisibleSubGroup { continue }
+            if hideSubGroups, let m = bodyPart.muscle, m.isSubGroup, !m.isAlwaysVisibleSubGroup { continue }
 
-            let muscle = bodyPart.slug.muscle
-            let highlight = muscle.flatMap { highlights[$0] }
+            let muscle = bodyPart.muscle
+            // Sub-groups inherit the parent's whole highlight (color AND
+            // opacity) — inheriting only the color drew e.g. adductors as a
+            // darker island inside a semi-transparent hamstring highlight.
+            let highlight = muscle.flatMap { m in
+                highlights[m] ?? m.parentGroup.flatMap { highlights[$0] }
+            }
             let isSelected: Bool = {
                 guard let m = muscle else { return false }
                 if selectedMuscles.contains(m) { return true }
-                if hideSubGroups, m.isAlwaysVisibleSubGroup, let parent = m.parentGroup {
+                // Always-visible sub-shapes can't be selected independently,
+                // so they follow their parent's selection in every mode.
+                if m.isAlwaysVisibleSubGroup, let parent = m.parentGroup {
                     return selectedMuscles.contains(parent)
                 }
                 return false
             }()
 
-            let fill = resolveFill(
-                for: bodyPart.slug,
-                highlight: highlight,
-                isSelected: isSelected
-            )
+            let fill = resolveFill(for: bodyPart, highlight: highlight, isSelected: isSelected)
 
             let highlightOpacity = highlight?.opacity ?? 1.0
             let needsOpacityLayer = highlightOpacity < 1.0 && highlight != nil
-            let needsShadow = hasShadow && highlight != nil
 
-            let allPaths: [(String, MuscleSide)] =
-                bodyPart.common.map { ($0, .both) } +
-                bodyPart.left.map { ($0, .left) } +
-                bodyPart.right.map { ($0, .right) }
+            for pathString in bodyPart.allPaths {
+                let path = cachedPath(pathString, layout)
+                let opacityFactor = (isSelected && selectionPulseFactor != 1.0) ? selectionPulseFactor : 1.0
 
-            for (pathString, _) in allPaths {
-                let path = pathCache.path(
-                    for: pathString,
-                    scale: scale,
-                    offsetX: offsetX,
-                    offsetY: offsetY
-                )
-
-                let boundingRect = path.boundingRect
-                let shading = fill.shading(in: boundingRect)
-
-                if needsShadow || needsOpacityLayer {
+                if needsOpacityLayer || opacityFactor != 1.0 {
                     context.drawLayer { layerContext in
-                        if needsShadow {
-                            layerContext.addFilter(.shadow(
-                                color: style.shadowColor,
-                                radius: style.shadowRadius,
-                                x: style.shadowOffset.width,
-                                y: style.shadowOffset.height
-                            ))
-                        }
-                        if needsOpacityLayer {
-                            layerContext.opacity = highlightOpacity
-                        }
-                        if isSelected && selectionPulseFactor != 1.0 {
-                            layerContext.opacity *= selectionPulseFactor
-                        }
-                        layerContext.fill(path, with: shading)
+                        layerContext.opacity = (needsOpacityLayer ? highlightOpacity : 1.0) * opacityFactor
+                        layerContext.fill(path, with: .color(fill))
                     }
                 } else {
-                    if isSelected && selectionPulseFactor != 1.0 {
-                        context.drawLayer { layerContext in
-                            layerContext.opacity = selectionPulseFactor
-                            layerContext.fill(path, with: shading)
-                        }
-                    } else {
-                        context.fill(path, with: shading)
-                    }
+                    context.fill(path, with: .color(fill))
                 }
 
                 if style.strokeWidth > 0 {
@@ -159,32 +114,24 @@ struct BodyRenderer {
                 }
             }
         }
-
     }
 
     /// Find which muscle was tapped at the given point.
     /// Sub-groups are tested before their parent groups.
     func hitTest(at point: CGPoint, in size: CGSize) -> (Muscle, MuscleSide)? {
-        let viewBox = BodyPathProvider.viewBox(gender: gender, side: side)
-        let scale = min(
-            size.width / viewBox.size.width,
-            size.height / viewBox.size.height
-        )
-        let offsetX = (size.width - viewBox.size.width * scale) / 2 - viewBox.origin.x * scale
-        let offsetY = (size.height - viewBox.size.height * scale) / 2 - viewBox.origin.y * scale
-
-        let bodyParts = BodyPathProvider.paths(gender: gender, side: side)
+        let layout = layout(in: size)
+        let bodyParts = BodyPathProvider.paths(side: side)
 
         // Test sub-groups first so they take priority over parent groups
         let sortedParts = bodyParts.sorted { a, b in
-            let aIsSub = a.slug.muscle?.isSubGroup ?? false
-            let bIsSub = b.slug.muscle?.isSubGroup ?? false
+            let aIsSub = a.muscle?.isSubGroup ?? false
+            let bIsSub = b.muscle?.isSubGroup ?? false
             if aIsSub != bIsSub { return aIsSub }
             return false
         }
 
         for bodyPart in sortedParts {
-            guard let muscle = bodyPart.slug.muscle else { continue }
+            guard let muscle = bodyPart.muscle else { continue }
             if hideSubGroups && muscle.isSubGroup && !muscle.isAlwaysVisibleSubGroup { continue }
 
             // Always-visible sub-groups return parent when sub-groups are hidden
@@ -196,18 +143,15 @@ struct BodyRenderer {
             }
 
             for pathString in bodyPart.left {
-                let path = pathCache.path(for: pathString, scale: scale, offsetX: offsetX, offsetY: offsetY)
-                if path.contains(point) { return (resolvedMuscle, .left) }
+                if cachedPath(pathString, layout).contains(point) { return (resolvedMuscle, .left) }
             }
 
             for pathString in bodyPart.right {
-                let path = pathCache.path(for: pathString, scale: scale, offsetX: offsetX, offsetY: offsetY)
-                if path.contains(point) { return (resolvedMuscle, .right) }
+                if cachedPath(pathString, layout).contains(point) { return (resolvedMuscle, .right) }
             }
 
             for pathString in bodyPart.common {
-                let path = pathCache.path(for: pathString, scale: scale, offsetX: offsetX, offsetY: offsetY)
-                if path.contains(point) { return (resolvedMuscle, .both) }
+                if cachedPath(pathString, layout).contains(point) { return (resolvedMuscle, .both) }
             }
         }
 
@@ -216,28 +160,16 @@ struct BodyRenderer {
 
     /// Returns the bounding rect of a muscle's combined paths in the given view size.
     func boundingRect(for muscle: Muscle, in size: CGSize) -> CGRect? {
-        let viewBox = BodyPathProvider.viewBox(gender: gender, side: side)
-        let scale = min(
-            size.width / viewBox.size.width,
-            size.height / viewBox.size.height
-        )
-        let offsetX = (size.width - viewBox.size.width * scale) / 2 - viewBox.origin.x * scale
-        let offsetY = (size.height - viewBox.size.height * scale) / 2 - viewBox.origin.y * scale
-
-        let bodyParts = BodyPathProvider.paths(gender: gender, side: side)
+        let layout = layout(in: size)
+        let bodyParts = BodyPathProvider.paths(side: side)
         var combinedRect: CGRect?
 
         for bodyPart in bodyParts {
-            guard bodyPart.slug.muscle == muscle else { continue }
+            guard bodyPart.muscle == muscle else { continue }
             for pathString in bodyPart.allPaths {
-                let path = pathCache.path(for: pathString, scale: scale, offsetX: offsetX, offsetY: offsetY)
-                let rect = path.boundingRect
+                let rect = cachedPath(pathString, layout).boundingRect
                 guard !rect.isEmpty else { continue }
-                if let existing = combinedRect {
-                    combinedRect = existing.union(rect)
-                } else {
-                    combinedRect = rect
-                }
+                combinedRect = combinedRect?.union(rect) ?? rect
             }
         }
 
@@ -247,27 +179,22 @@ struct BodyRenderer {
     // MARK: - Private
 
     private func resolveFill(
-        for slug: BodySlug,
+        for bodyPart: BodyPartPathData,
         highlight: MuscleHighlight?,
         isSelected: Bool
-    ) -> MuscleFill {
-        if slug == .hair {
-            return .color(style.hairColor)
+    ) -> Color {
+        guard let muscle = bodyPart.muscle else {
+            return style.hairColor
         }
-        if slug == .head {
-            return .color(style.headColor)
+        if muscle == .head {
+            return style.headColor
         }
         if isSelected {
-            return .color(style.selectionColor)
+            return style.selectionColor
         }
         if let highlight {
-            return highlight.fill
+            return highlight.color
         }
-        // Sub-group inheritance: if no highlight on sub-group, use parent's highlight
-        if let muscle = slug.muscle, let parent = muscle.parentGroup,
-           let parentHighlight = highlights[parent] {
-            return parentHighlight.fill
-        }
-        return .color(style.defaultFillColor)
+        return style.defaultFillColor
     }
 }

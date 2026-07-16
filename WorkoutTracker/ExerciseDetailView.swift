@@ -5,7 +5,6 @@ import Charts
 /// Per-exercise analytics: e1RM trend, bests, and full session history.
 struct ExerciseDetailView: View {
     let exercise: Exercise
-    @EnvironmentObject var themeManager: ThemeManager
     @Environment(\.modelContext) private var context
 
     @State private var sessionToDelete: ExerciseSession?
@@ -31,28 +30,11 @@ struct ExerciseDetailView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(
-            "Delete this session?",
-            isPresented: Binding(
-                get: { sessionToDelete != nil },
-                set: { if !$0 { sessionToDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Haptics.shared.play(.destructive)
-                if let session = sessionToDelete {
-                    context.delete(session)
-                    try? context.save()
-                }
-                sessionToDelete = nil
-            }
-            Button("Cancel", role: .cancel) { sessionToDelete = nil }
-        } message: {
-            Text("This removes the \(sessionToDelete?.date.formatted(date: .abbreviated, time: .omitted) ?? "") session and all its sets.")
+        .deleteConfirmation("Delete this session?", item: $sessionToDelete, context: context) {
+            "This removes the \($0.date.formatted(date: .abbreviated, time: .omitted)) session and all its sets."
         }
     }
 
@@ -73,20 +55,20 @@ struct ExerciseDetailView: View {
                 StatTile(
                     icon: "stopwatch.fill",
                     iconColor: .appAccent,
-                    value: best > 0 ? TrainingEngine.formatWeight(best) : "—",
+                    value: best > 0 ? best.formatted() : "—",
                     label: "Longest Run"
                 )
             } else {
                 StatTile(
                     icon: "trophy.fill",
                     iconColor: .appWarning,
-                    value: best > 0 ? TrainingEngine.formatWeight(best) : "—",
+                    value: best > 0 ? best.formatted() : "—",
                     label: "Best est. 1RM"
                 )
                 StatTile(
                     icon: "scalemass.fill",
                     iconColor: .appAccent,
-                    value: topWeight > 0 ? TrainingEngine.formatWeight(topWeight) : "—",
+                    value: topWeight > 0 ? topWeight.formatted() : "—",
                     label: "Top Weight"
                 )
             }

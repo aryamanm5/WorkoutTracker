@@ -32,7 +32,6 @@ struct TrendPoint: Identifiable {
 /// `points.count >= 2` before showing it.
 struct TrendChart: View {
     let points: [TrendPoint]
-    var yLabel: String = "Value"
 
     private var domain: ClosedRange<Double> {
         let values = points.map(\.value)
@@ -51,7 +50,7 @@ struct TrendChart: View {
             if !splitByLocation {
                 AreaMark(
                     x: .value("Date", point.date),
-                    y: .value(yLabel, point.value)
+                    y: .value("Value", point.value)
                 )
                 .foregroundStyle(
                     LinearGradient(
@@ -64,7 +63,7 @@ struct TrendChart: View {
 
             LineMark(
                 x: .value("Date", point.date),
-                y: .value(yLabel, point.value)
+                y: .value("Value", point.value)
             )
             .foregroundStyle(by: .value("Location", point.location))
             .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round))
@@ -72,7 +71,7 @@ struct TrendChart: View {
 
             PointMark(
                 x: .value("Date", point.date),
-                y: .value(yLabel, point.value)
+                y: .value("Value", point.value)
             )
             .foregroundStyle(by: .value("Location", point.location))
             .symbolSize(30)

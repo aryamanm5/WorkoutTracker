@@ -97,12 +97,11 @@ private struct MuscleMapPanel: View {
     var selectedMuscles: Binding<Set<TargetMuscle>>?
     let isEditable: Bool
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     private var style: BodyViewStyle {
         BodyViewStyle(
             defaultFillColor: defaultFill,
-            strokeColor: themeManager.cardBorder,
+            strokeColor: Color.appCardBorder,
             strokeWidth: 0.55,
             selectionColor: .appAccent,
             selectionStrokeColor: Color.appGradientEnd,
@@ -114,10 +113,7 @@ private struct MuscleMapPanel: View {
             hairColor: Color(
                 light: Color(red: 0.35, green: 0.32, blue: 0.29),
                 dark: Color(red: 0.10, green: 0.09, blue: 0.08)
-            ),
-            shadowColor: .clear,
-            shadowRadius: 0,
-            shadowOffset: .zero
+            )
         )
     }
 
@@ -145,7 +141,7 @@ private struct MuscleMapPanel: View {
     }
 
     private var configuredBodyView: BodyView {
-        var bodyView = BodyView(gender: .male, side: side, style: style)
+        var bodyView = BodyView(side: side, style: style)
             .showSubGroups()
 
         if isEditable, let selectedMuscles {
@@ -173,12 +169,6 @@ private struct MuscleMapPanel: View {
                     tooltipLabel(for: muscle)
                 }
                 .pulseSelected(speed: 1.2, range: 0.72...1.0)
-        } else {
-            bodyView = bodyView
-                .tooltip { muscle, _ in
-                    tooltipLabel(for: muscle)
-                }
-                .animated(duration: 0.25)
         }
 
         return bodyView
@@ -203,25 +193,33 @@ private struct MuscleMapPanel: View {
 
     @ViewBuilder
     private func tooltipLabel(for muscle: Muscle) -> some View {
-        if let target = isEditable ? muscle.editorTarget(on: side) : muscle.targetMuscle(on: side) {
-            VStack(spacing: 2) {
-                Text(target.displayName)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundColor(themeManager.primaryText)
-                if !isEditable {
-                    Text(TrainingEngine.RecoveryStatus.from(fatigue: intensities[target] ?? 0).rawValue)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(themeManager.secondaryText)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        if let target = resolvedTarget(for: muscle) {
+            Text(target.displayName)
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(Color.appPrimaryText)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
         }
     }
 
+    /// The target a tapped region should act on. Mappings are asymmetric —
+    /// Side Delts light the back deltoid, whose reverse mapping is Rear
+    /// Delts — so a region lit by an already-selected target resolves to THAT
+    /// target; otherwise it resolves to its own reverse mapping.
+    private func resolvedTarget(for muscle: Muscle) -> TargetMuscle? {
+        let selection = selectedMuscles?.wrappedValue ?? []
+        if let own = muscle.editorTarget(on: side), selection.contains(own) {
+            return own
+        }
+        if let lit = selection.first(where: { $0.mapMuscles(on: side).contains(muscle) }) {
+            return lit
+        }
+        return muscle.editorTarget(on: side)
+    }
+
     private func toggle(_ muscle: Muscle) {
-        guard let target = muscle.editorTarget(on: side), let selectedMuscles else { return }
+        guard let target = resolvedTarget(for: muscle), let selectedMuscles else { return }
         if selectedMuscles.wrappedValue.contains(target) {
             selectedMuscles.wrappedValue.remove(target)
             Haptics.shared.play(.toggleOff)
@@ -240,7 +238,6 @@ struct MuscleDiagramView: View {
     var selectedMuscles: Binding<Set<TargetMuscle>>?
     var isEditable: Bool = false
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         VStack(spacing: 12) {
@@ -272,7 +269,7 @@ struct MuscleDiagramView: View {
             HStack(spacing: 8) {
                 Text("Fresh")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 LinearGradient(
                     colors: [Color.heat(0.05), Color.heat(0.5), Color.heat(1.0)],
                     startPoint: .leading, endPoint: .trailing
@@ -281,7 +278,7 @@ struct MuscleDiagramView: View {
                 .clipShape(Capsule())
                 Text("Fatigued")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             .padding(.top, 4)
         }
@@ -291,7 +288,7 @@ struct MuscleDiagramView: View {
         VStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
                 .kerning(1.5)
 
             MuscleMapPanel(
@@ -300,7 +297,6 @@ struct MuscleDiagramView: View {
                 selectedMuscles: selectedMuscles,
                 isEditable: isEditable
             )
-            .environmentObject(themeManager)
         }
     }
 
@@ -311,7 +307,7 @@ struct MuscleDiagramView: View {
                 .frame(width: 16, height: 10)
             Text(label)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
     }
 }

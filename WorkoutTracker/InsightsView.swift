@@ -5,14 +5,15 @@ import Charts
 /// Analytics home: training-heat calendar, weekly muscle volume,
 /// strength trends (est. 1RM), and per-exercise drill-downs.
 struct InsightsView: View {
-    @EnvironmentObject var themeManager: ThemeManager
 
     @Query(sort: \ExerciseSession.date, order: .reverse) private var sessions: [ExerciseSession]
     @Query private var workoutDays: [WorkoutDay]
     @Query(sort: \Exercise.name) private var exercises: [Exercise]
 
     @State private var displayedMonth = Calendar.current.startOfDay(for: Date())
-    @State private var chartExerciseName: String?
+    // Stored as an identifier, not a name — Home and Gym keep separate
+    // libraries, so the same name can legitimately exist twice.
+    @State private var chartExerciseID: PersistentIdentifier?
 
     var body: some View {
         NavigationStack {
@@ -33,7 +34,7 @@ struct InsightsView: View {
                     }
                 }
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Insights")
             .navigationBarTitleDisplayMode(.large)
         }
@@ -46,10 +47,10 @@ struct InsightsView: View {
                 .foregroundColor(.appAccent)
             Text("No training yet")
                 .appHeadingStyle()
-                .foregroundColor(themeManager.primaryText)
+                .foregroundColor(Color.appPrimaryText)
             Text("Finish your first session and your trends, calendar and recovery will light up here.")
                 .appBodyStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
@@ -126,7 +127,7 @@ struct InsightsView: View {
                 .hapticButton(.tap, pressScale: 0.9)
                 Text(displayedMonth.formatted(.dateTime.month(.wide).year()))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                     .frame(minWidth: 120)
                 Button {
                     withAnimation { displayedMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth)! }
@@ -144,7 +145,7 @@ struct InsightsView: View {
                 ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                     Text(symbol)
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 ForEach(Array(daysInMonth().enumerated()), id: \.offset) { _, day in
                     if let day {
@@ -170,7 +171,7 @@ struct InsightsView: View {
             HStack(spacing: 6) {
                 Text("Light")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 ForEach([0.2, 0.45, 0.7, 1.0], id: \.self) { value in
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.heat(value))
@@ -178,12 +179,12 @@ struct InsightsView: View {
                 }
                 Text("Heavy")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Spacer()
                 Circle().fill(Color.appCreatine).frame(width: 6, height: 6)
                 Text("Creatine")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -223,34 +224,25 @@ struct InsightsView: View {
                 Spacer()
                 Text("Last 7 days")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             if top.isEmpty {
                 Text("No strength sets logged this week yet.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             } else {
                 ForEach(Array(top), id: \.key) { muscle, sets in
                     HStack(spacing: 10) {
                         Text(muscle.displayName)
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                             .frame(width: 90, alignment: .leading)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(themeManager.inputBackground)
-                                Capsule()
-                                    .fill(LinearGradient.ember)
-                                    .frame(width: max(8, geo.size.width * CGFloat(sets) / CGFloat(maxSets)))
-                            }
-                        }
-                        .frame(height: 10)
+                        EmberBar(fraction: Double(sets) / Double(maxSets))
                         Text("\(sets)")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                             .monospacedDigit()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                             .frame(width: 26, alignment: .trailing)
                     }
                 }
@@ -263,8 +255,8 @@ struct InsightsView: View {
     // MARK: - Strength trend
 
     private var chartExercise: Exercise? {
-        if let name = chartExerciseName,
-           let match = exercises.first(where: { $0.name == name }) {
+        if let id = chartExerciseID,
+           let match = exercises.first(where: { $0.persistentModelID == id }) {
             return match
         }
         // Default to the most recently trained exercise with enough history.
@@ -284,7 +276,7 @@ struct InsightsView: View {
                         Section(loc.rawValue) {
                             ForEach(exercises.filter { $0.location == loc }, id: \.persistentModelID) { exercise in
                                 Button(exercise.name) {
-                                    chartExerciseName = exercise.name
+                                    chartExerciseID = exercise.persistentModelID
                                     Haptics.shared.play(.selection)
                                 }
                             }
@@ -311,8 +303,8 @@ struct InsightsView: View {
                     HStack(spacing: 8) {
                         ChipLabel(
                             text: isCardio
-                                ? "Best \(TrainingEngine.formatWeight(best)) min"
-                                : "Best est. 1RM \(TrainingEngine.formatWeight(best)) lb",
+                                ? "Best \(best.formatted()) min"
+                                : "Best est. 1RM \(best.formatted()) lb",
                             color: .appWarning
                         )
                         ChipLabel(text: exercise.location.rawValue, color: .appCardio)
@@ -320,22 +312,22 @@ struct InsightsView: View {
 
                     // Home and gym sessions are different lifts in practice
                     // (equipment, machines) so they get their own lines.
-                    TrendChart(points: points, yLabel: isCardio ? "Minutes" : "e1RM")
+                    TrendChart(points: points)
 
                     Text(isCardio
                          ? "Run time per session"
                          : "Estimated one-rep max per session (Epley)")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 } else {
                     Text("Log \(exercise.name) a couple more times to see a trend.")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
             } else {
                 Text("Pick an exercise to see its trend.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -361,17 +353,17 @@ struct InsightsView: View {
                             Text(exercise.name)
                                 .appBodyStyle()
                                 .fontWeight(.semibold)
-                                .foregroundColor(themeManager.primaryText)
+                                .foregroundColor(Color.appPrimaryText)
                             Text("\(exercise.sessions.count) session\(exercise.sessions.count == 1 ? "" : "s")")
                                 .appCaptionStyle()
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                         }
                         Spacer()
                         ChipLabel(text: exercise.location.rawValue,
                                   color: exercise.location == .home ? .appCardio : .appAccent)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                     .padding(.vertical, 10)
                 }
@@ -394,7 +386,6 @@ private struct HeatDayCell: View {
     let trained: Bool
     let tookCreatine: Bool
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     private var isToday: Bool { Calendar.current.isDateInToday(date) }
 
@@ -402,14 +393,14 @@ private struct HeatDayCell: View {
         VStack(spacing: 3) {
             Text("\(Calendar.current.component(.day, from: date))")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(trained && intensity > 0.45 ? .white : themeManager.primaryText)
+                .foregroundColor(trained && intensity > 0.45 ? .white : Color.appPrimaryText)
             Circle()
                 .fill(tookCreatine ? Color.appCreatine : .clear)
                 .frame(width: 4, height: 4)
         }
         .frame(maxWidth: .infinity)
         .frame(height: 38)
-        .background(trained ? Color.heat(max(intensity, 0.12)) : themeManager.inputBackground.opacity(0.5))
+        .background(trained ? Color.heat(max(intensity, 0.12)) : Color.appInputBackground.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)

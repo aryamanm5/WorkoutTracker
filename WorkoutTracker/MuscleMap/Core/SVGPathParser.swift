@@ -81,6 +81,7 @@ struct SVGPathParser {
             skipWhitespaceAndCommas()
             guard index < pathString.endIndex else { break }
 
+            let indexAtLoopStart = index
             let char = pathString[index]
 
             if char.isLetter && char != "e" && char != "E" {
@@ -150,6 +151,13 @@ struct SVGPathParser {
                 commands.append(.closePath)
 
             default:
+                index = pathString.index(after: index)
+            }
+
+            // Progress guard: if nothing was consumed (e.g. an unexpected
+            // character like "\r" where a number was expected), skip it —
+            // otherwise the loop would spin on the same index forever.
+            if index == indexAtLoopStart {
                 index = pathString.index(after: index)
             }
         }

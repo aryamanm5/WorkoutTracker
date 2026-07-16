@@ -11,8 +11,6 @@ struct ActiveSessionView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
-    @Environment(WorkoutViewModel.self) private var viewModel
 
     @Query(sort: \Exercise.name) private var allExercises: [Exercise]
 
@@ -20,6 +18,7 @@ struct ActiveSessionView: View {
     @State private var extraExercises: [Exercise] = []
     @State private var loggedSessions: [ExerciseSession] = []
     @State private var prBannerText: String?
+    @State private var prBannerTask: Task<Void, Never>?
     @State private var showingPicker = false
     @State private var showingSummary = false
     @State private var showingEndConfirm = false
@@ -30,15 +29,15 @@ struct ActiveSessionView: View {
             result.append(extra)
         }
         return result.sorted {
-            let doneA = viewModel.isExerciseCompletedToday($0)
-            let doneB = viewModel.isExerciseCompletedToday($1)
+            let doneA = $0.isCompletedToday
+            let doneB = $1.isCompletedToday
             if doneA != doneB { return !doneA }
             return $0.name < $1.name
         }
     }
 
     private var completedCount: Int {
-        queue.filter { viewModel.isExerciseCompletedToday($0) }.count
+        queue.filter(\.isCompletedToday).count
     }
 
     var body: some View {
@@ -60,7 +59,7 @@ struct ActiveSessionView: View {
                         } label: {
                             QueueRow(
                                 exercise: exercise,
-                                isDone: viewModel.isExerciseCompletedToday(exercise)
+                                isDone: exercise.isCompletedToday
                             )
                         }
                         .hapticRow()
@@ -77,7 +76,7 @@ struct ActiveSessionView: View {
                 .padding(16)
                 .padding(.bottom, 90)
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("\(focus.rawValue) · \(location.rawValue)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -105,7 +104,7 @@ struct ActiveSessionView: View {
                 .buttonStyle(EmberButtonStyle())
                 .padding(.horizontal, 16)
                 .padding(.bottom, 8)
-                .background(themeManager.background.opacity(0.94))
+                .background(Color.appBackground.opacity(0.94))
             }
             .confirmationDialog("Wrap up this session?", isPresented: $showingEndConfirm, titleVisibility: .visible) {
                 Button("Show Summary") { showingSummary = true }
@@ -138,11 +137,11 @@ struct ActiveSessionView: View {
                     Text(elapsedString(to: context.date))
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
                         .monospacedDigit()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                 }
                 Text("Session time")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -151,7 +150,7 @@ struct ActiveSessionView: View {
                     .foregroundColor(.appAccent)
                 Text("Exercises done")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -159,8 +158,8 @@ struct ActiveSessionView: View {
     }
 
     private func elapsedString(to date: Date) -> String {
-        let seconds = max(0, Int(date.timeIntervalSince(sessionStart)))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
+        Duration.seconds(max(0, date.timeIntervalSince(sessionStart)))
+            .formatted(.time(pattern: .minuteSecond))
     }
 
     private func exerciseFinished(_ session: ExerciseSession) {
@@ -174,10 +173,14 @@ struct ActiveSessionView: View {
         if isPR, let name = session.exercise?.name {
             let e1rm = TrainingEngine.bestOneRepMax(in: session)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                prBannerText = "New \(name) PR — est. 1RM \(TrainingEngine.formatWeight(e1rm)) lb!"
+                prBannerText = "New \(name) PR — est. 1RM \(e1rm.formatted()) lb!"
             }
-            Task {
+            // Cancel the previous dismissal so back-to-back PRs don't wipe a
+            // fresh banner after one second.
+            prBannerTask?.cancel()
+            prBannerTask = Task {
                 try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
                 withAnimation { prBannerText = nil }
             }
         }
@@ -190,7 +193,6 @@ private struct QueueRow: View {
     let exercise: Exercise
     let isDone: Bool
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     private var advice: TrainingEngine.ProgressionAdvice? {
         TrainingEngine.progression(for: exercise)
@@ -209,21 +211,21 @@ private struct QueueRow: View {
                 Text(exercise.name)
                     .appBodyStyle()
                     .fontWeight(.semibold)
-                    .foregroundColor(themeManager.primaryText)
-                    .strikethrough(isDone, color: themeManager.secondaryText)
+                    .foregroundColor(Color.appPrimaryText)
+                    .strikethrough(isDone, color: Color.appSecondaryText)
 
                 if let advice, !isDone {
                     HStack(spacing: 6) {
                         Image(systemName: adviceIcon(advice.kind))
                             .font(.system(size: 12))
-                        Text("\(TrainingEngine.formatWeight(advice.weight)) lb")
+                        Text("\(advice.weight.formatted()) lb")
                             .font(.system(size: 13, weight: .bold, design: .rounded))
                     }
                     .foregroundColor(adviceColor(advice.kind))
                 } else if isDone {
                     Text("Logged today")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
             }
 
@@ -231,7 +233,7 @@ private struct QueueRow: View {
 
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
         .padding(14)
         .appCard()
@@ -250,7 +252,7 @@ private struct QueueRow: View {
         switch kind {
         case .increase: return .appSuccess
         case .decrease: return .appWarning
-        case .hold, .manual: return themeManager.secondaryText
+        case .hold, .manual: return Color.appSecondaryText
         }
     }
 }
@@ -264,7 +266,6 @@ struct ExercisePreviewView: View {
     let location: WorkoutLocation
     var onFinished: (ExerciseSession) -> Void
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     /// Preview and logger share one navigation entry: starting swaps this
     /// view for the logger in place, so finishing pops straight to the queue.
@@ -301,7 +302,7 @@ struct ExercisePreviewView: View {
             .padding(16)
             .padding(.bottom, 90)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -313,7 +314,7 @@ struct ExercisePreviewView: View {
             .buttonStyle(EmberButtonStyle())
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
-            .background(themeManager.background.opacity(0.94))
+            .background(Color.appBackground.opacity(0.94))
         }
     }
 
@@ -324,16 +325,16 @@ struct ExercisePreviewView: View {
                 Image(systemName: coachIcon(advice.kind))
                     .font(.system(size: 22))
                     .foregroundColor(coachColor(advice.kind))
-                Text("\(TrainingEngine.formatWeight(advice.weight)) lb")
+                Text("\(advice.weight.formatted()) lb")
                     .font(.system(size: 34, weight: .heavy, design: .rounded))
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Text(coachVerb(advice.kind))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                     .foregroundColor(coachColor(advice.kind))
             }
             Text(advice.reason)
                 .appBodyStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -376,7 +377,7 @@ struct ExercisePreviewView: View {
             if recentSessions.isEmpty {
                 Text("First time doing \(exercise.name) at \(location.rawValue.lowercased() == "home" ? "home" : location.rawValue) — log it and the coach takes over from here.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             } else {
                 ForEach(Array(recentSessions.enumerated()), id: \.element.persistentModelID) { index, session in
                     if index > 0 { Divider() }
@@ -396,11 +397,11 @@ struct ExercisePreviewView: View {
                 Text(session.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
                     .appCaptionStyle()
                     .fontWeight(.semibold)
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Spacer()
                 Text(session.date.formatted(.relative(presentation: .named)))
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             if exercise.isCardio {
@@ -413,13 +414,13 @@ struct ExercisePreviewView: View {
             if !session.machineSettings.isEmpty {
                 Label(session.machineSettings, systemImage: "gearshape.fill")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             if !session.notes.isEmpty {
                 Text("“\(session.notes)”")
                     .appCaptionStyle()
                     .italic()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
     }
@@ -428,10 +429,10 @@ struct ExercisePreviewView: View {
     private func lastCardioRows(_ session: ExerciseSession) -> some View {
         HStack(spacing: 12) {
             if let run = session.runningTime, run > 0 {
-                previewTile(value: "\(TrainingEngine.formatWeight(run))", label: "Run min")
+                previewTile(value: "\(run.formatted())", label: "Run min")
             }
             if let speed = session.runningSpeed, speed > 0 {
-                previewTile(value: "\(TrainingEngine.formatWeight(speed))", label: "mph")
+                previewTile(value: "\(speed.formatted())", label: "mph")
             }
             if let intensity = session.intensityRating {
                 previewTile(value: "\(intensity)/10", label: "Intensity")
@@ -443,14 +444,14 @@ struct ExercisePreviewView: View {
         VStack(spacing: 4) {
             Text(value)
                 .font(.system(size: 20, weight: .heavy, design: .rounded))
-                .foregroundColor(themeManager.primaryText)
+                .foregroundColor(Color.appPrimaryText)
             Text(label)
                 .appCaptionStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 10)
-        .background(themeManager.inputBackground)
+        .background(Color.appInputBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -485,13 +486,15 @@ struct ExerciseLoggerView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var themeManager: ThemeManager
 
     @AppStorage("restTargetSeconds") private var restTarget: Int = 90
 
     // Strength state
     @State private var completedSets: [TempSet] = []
     @State private var reps = 8
+    /// What `prefill()` wrote into the weight field, so "user typed a set"
+    /// can be told apart from "the coach's suggestion is still sitting there".
+    @State private var prefilledWeightText = ""
     @State private var weight: Double?
     @State private var weightText = ""
     @State private var difficulty = 3
@@ -560,7 +563,7 @@ struct ExerciseLoggerView: View {
             }
             .padding(16)
         }
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
         .dismissableKeyboard()
@@ -586,13 +589,16 @@ struct ExerciseLoggerView: View {
 
     private var canFinish: Bool {
         if exercise.isCardio {
-            return Double(runningTime) != nil || Double(warmUpTime) != nil || Double(coolDownTime) != nil
+            return Double(userInput: runningTime) != nil || Double(userInput: warmUpTime) != nil || Double(userInput: coolDownTime) != nil
         }
         return !completedSets.isEmpty || currentSetHasContent
     }
 
+    /// True only when the user actually edited the set — the prefilled coach
+    /// weight alone must not count, or bailing out of an untouched exercise
+    /// would save a phantom set.
     private var currentSetHasContent: Bool {
-        (Double(weightText) ?? 0) > 0 || reps != 8
+        weightText != prefilledWeightText || reps != 8
     }
 
     // MARK: Rest countdown
@@ -629,10 +635,10 @@ struct ExerciseLoggerView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(done ? "Rest complete" : "Resting")
                         .appHeadingStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     Text(done ? "You're recovered — start your next set" : "Next set when the ring closes")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
 
                 Spacer()
@@ -672,15 +678,15 @@ struct ExerciseLoggerView: View {
                 .foregroundColor(advice.kind == .increase ? .appSuccess : .appWarning)
             VStack(alignment: .leading, spacing: 2) {
                 Text(advice.kind == .increase
-                     ? "Coach says: go \(TrainingEngine.formatWeight(advice.weight)) lb"
+                     ? "Coach says: go \(advice.weight.formatted()) lb"
                      : (advice.kind == .decrease
-                        ? "Coach says: deload to \(TrainingEngine.formatWeight(advice.weight)) lb"
-                        : "Coach says: \(TrainingEngine.formatWeight(advice.weight)) lb today"))
+                        ? "Coach says: deload to \(advice.weight.formatted()) lb"
+                        : "Coach says: \(advice.weight.formatted()) lb today"))
                     .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Text(advice.reason)
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -697,9 +703,9 @@ struct ExerciseLoggerView: View {
                 SectionKicker(text: "Set \(completedSets.count + 1)")
                 Spacer()
                 if let last = lastSession, let topWeight = last.sets.map(\.weight).max(), topWeight > 0 {
-                    Text("Last time: \(TrainingEngine.formatWeight(topWeight)) lb")
+                    Text("Last time: \(topWeight.formatted()) lb")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
             }
 
@@ -712,11 +718,11 @@ struct ExerciseLoggerView: View {
                         .appInputStyle()
                         .frame(maxWidth: .infinity)
                         .onChange(of: weightText) {
-                            weight = Double(weightText)
+                            weight = Double(userInput: weightText)
                         }
                     Text("lb")
                         .appHeadingStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Button {
                         showingPlates = true
                     } label: {
@@ -740,7 +746,7 @@ struct ExerciseLoggerView: View {
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 8)
-                                .background(themeManager.inputBackground)
+                                .background(Color.appInputBackground)
                                 .foregroundColor(delta > 0 ? .appSuccess : .appDanger)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                         }
@@ -753,7 +759,7 @@ struct ExerciseLoggerView: View {
             HStack {
                 Text("Reps")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Spacer()
                 HStack(spacing: 16) {
                     Button {
@@ -768,7 +774,7 @@ struct ExerciseLoggerView: View {
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .monospacedDigit()
                         .frame(minWidth: 48)
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                         .contentTransition(.numericText())
                     Button {
                         reps += 1
@@ -786,10 +792,10 @@ struct ExerciseLoggerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Effort")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Text(difficultyLabel(for: difficulty))
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                 }
                 Spacer()
                 DifficultyDots(rating: difficulty, size: 22, interactive: true) { tapped in
@@ -840,7 +846,7 @@ struct ExerciseLoggerView: View {
                 HStack {
                     Text("How did it feel?")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Spacer()
                     Text("\(Int(intensity))/10")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
@@ -859,14 +865,14 @@ struct ExerciseLoggerView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .appCaptionStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
             HStack(spacing: 4) {
                 TextField("0", text: text)
                     .keyboardType(.decimalPad)
                     .appInputStyle()
                 Text(unit)
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
     }
@@ -895,11 +901,11 @@ struct ExerciseLoggerView: View {
                         .appInputStyle()
                     Text("lb")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 Text("The coach will hold you to this next time instead of computing its own advice.")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
 
             TextField("Session notes (optional)", text: $sessionNotes, axis: .vertical)
@@ -917,11 +923,11 @@ struct ExerciseLoggerView: View {
                     .padding(16)
                     .onChange(of: weight) {
                         if let weight {
-                            weightText = TrainingEngine.formatWeight(weight)
+                            weightText = weight.formatted()
                         }
                     }
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Plate Math")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -945,18 +951,19 @@ struct ExerciseLoggerView: View {
         }
         if let advice, !exercise.isCardio {
             weight = advice.weight
-            weightText = TrainingEngine.formatWeight(advice.weight)
+            weightText = advice.weight.formatted()
         } else if let topWeight = lastSession?.sets.map(\.weight).max(), topWeight > 0 {
             weight = topWeight
-            weightText = TrainingEngine.formatWeight(topWeight)
+            weightText = topWeight.formatted()
         }
+        prefilledWeightText = weightText
     }
 
     private func bumpWeight(by delta: Double) {
-        let current = Double(weightText) ?? 0
+        let current = Double(userInput: weightText) ?? 0
         let next = max(0, current + delta)
         weight = next
-        weightText = TrainingEngine.formatWeight(next)
+        weightText = next.formatted()
     }
 
     /// Compares against the exercise's historical max: obvious typos
@@ -970,7 +977,7 @@ struct ExerciseLoggerView: View {
     }
 
     private func attemptSaveSet() {
-        let candidate = Double(weightText) ?? 0
+        let candidate = Double(userInput: weightText) ?? 0
         if candidate > 0 && isWeightSuspicious(candidate) {
             pendingConfirmAction = .saveSet
             return
@@ -989,7 +996,7 @@ struct ExerciseLoggerView: View {
         completedSets.append(TempSet(
             setNumber: completedSets.count + 1,
             reps: reps,
-            weight: Double(weightText) ?? 0,
+            weight: Double(userInput: weightText) ?? 0,
             notes: setNotes,
             difficulty: difficulty,
             restTimeSeconds: restSeconds
@@ -1003,7 +1010,7 @@ struct ExerciseLoggerView: View {
     private func attemptFinish() {
         if !exercise.isCardio, currentSetHasContent, completedSets.isEmpty {
             // The user typed a first set but never tapped "Log Set" — capture it.
-            let candidate = Double(weightText) ?? 0
+            let candidate = Double(userInput: weightText) ?? 0
             if candidate > 0 && isWeightSuspicious(candidate) {
                 pendingConfirmAction = .finish
                 return
@@ -1035,10 +1042,10 @@ struct ExerciseLoggerView: View {
             totalSets: completedSets.count,
             notes: sessionNotes,
             location: location,
-            warmUpTime: exercise.isCardio ? Double(warmUpTime) : nil,
-            runningTime: exercise.isCardio ? Double(runningTime) : nil,
-            coolDownTime: exercise.isCardio ? Double(coolDownTime) : nil,
-            runningSpeed: exercise.isCardio ? Double(runningSpeed) : nil,
+            warmUpTime: exercise.isCardio ? Double(userInput: warmUpTime) : nil,
+            runningTime: exercise.isCardio ? Double(userInput: runningTime) : nil,
+            coolDownTime: exercise.isCardio ? Double(userInput: coolDownTime) : nil,
+            runningSpeed: exercise.isCardio ? Double(userInput: runningSpeed) : nil,
             intensityRating: exercise.isCardio ? Int(intensity) : nil
         )
         context.insert(session)
@@ -1094,7 +1101,6 @@ struct ExercisePickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
     @Query(sort: \Exercise.name) private var allExercises: [Exercise]
 
     @State private var searchText = ""
@@ -1120,13 +1126,13 @@ struct ExercisePickerSheet: View {
                             Image(systemName: exercise.isCardio ? "figure.run" : "dumbbell.fill")
                                 .foregroundColor(.appAccent)
                             Text(exercise.name)
-                                .foregroundColor(themeManager.primaryText)
+                                .foregroundColor(Color.appPrimaryText)
                             Spacer()
                             ChipLabel(text: exercise.type.rawValue)
                         }
                     }
                     .hapticButton(.tap, pressScale: 1)
-                    .listRowBackground(themeManager.cardBackground)
+                    .listRowBackground(Color.appCardBackground)
                 }
 
                 Section {
@@ -1138,11 +1144,11 @@ struct ExercisePickerSheet: View {
                             .foregroundColor(.appAccent)
                     }
                     .hapticButton(.tap, pressScale: 1)
-                    .listRowBackground(themeManager.cardBackground)
+                    .listRowBackground(Color.appCardBackground)
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .searchable(text: $searchText, prompt: "Search exercises")
             .navigationTitle("Add Exercise")
             .navigationBarTitleDisplayMode(.inline)
@@ -1180,7 +1186,6 @@ struct SessionSummaryView: View {
     let sessions: [ExerciseSession]
     var onDone: () -> Void
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     private var totalSets: Int { sessions.reduce(0) { $0 + $1.sets.count } }
     private var volume: Double { TrainingEngine.totalVolume(sessions: sessions) }
@@ -1199,17 +1204,17 @@ struct SessionSummaryView: View {
                     .foregroundStyle(LinearGradient.ember)
                 Text("\(focus.rawValue) Day Complete")
                     .appLargeTitleStyle()
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
                 Text(Date().formatted(date: .abbreviated, time: .shortened))
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             .padding(.top, 30)
 
             HStack(spacing: 12) {
-                summaryTile(value: durationString, label: "Duration")
-                summaryTile(value: "\(sessions.count)", label: "Exercises")
-                summaryTile(value: "\(totalSets)", label: "Sets")
+                StatTile(value: durationString, label: "Duration")
+                StatTile(value: "\(sessions.count)", label: "Exercises")
+                StatTile(value: "\(totalSets)", label: "Sets")
             }
 
             if volume > 0 {
@@ -1219,7 +1224,7 @@ struct SessionSummaryView: View {
                         .foregroundColor(.appAccent)
                     Text("Total weight moved")
                         .appCaptionStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 18)
@@ -1234,9 +1239,9 @@ struct SessionSummaryView: View {
                             Text(session.exercise?.name ?? "")
                                 .appBodyStyle()
                                 .fontWeight(.semibold)
-                                .foregroundColor(themeManager.primaryText)
+                                .foregroundColor(Color.appPrimaryText)
                             Spacer()
-                            Text("est. 1RM \(TrainingEngine.formatWeight(TrainingEngine.bestOneRepMax(in: session))) lb")
+                            Text("est. 1RM \(TrainingEngine.bestOneRepMax(in: session).formatted()) lb")
                                 .font(.system(size: 14, weight: .bold, design: .rounded))
                                 .foregroundColor(.appWarning)
                         }
@@ -1253,7 +1258,7 @@ struct SessionSummaryView: View {
                 .buttonStyle(EmberButtonStyle())
         }
         .padding(20)
-        .background(themeManager.background.ignoresSafeArea())
+        .background(Color.appBackground.ignoresSafeArea())
         .onAppear {
             // The sheet's presentation animation is ~0.35s; starting the
             // fanfare a beat in lets the seal land with the first burst.
@@ -1268,17 +1273,4 @@ struct SessionSummaryView: View {
         }
     }
 
-    private func summaryTile(value: String, label: String) -> some View {
-        VStack(spacing: 4) {
-            Text(value)
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundColor(themeManager.primaryText)
-            Text(label)
-                .appCaptionStyle()
-                .foregroundColor(themeManager.secondaryText)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .appCard()
-    }
 }

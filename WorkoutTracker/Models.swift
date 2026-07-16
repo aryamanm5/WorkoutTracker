@@ -29,7 +29,6 @@ enum PasscodeHasher {
 }
 
 // MARK: - TargetMuscle
-// Paste this block at the top of Models.swift, before WorkoutType
 
 enum TargetMuscle: String, CaseIterable, Identifiable, Codable, Hashable {
     case chest
@@ -54,28 +53,9 @@ enum TargetMuscle: String, CaseIterable, Identifiable, Codable, Hashable {
 
     var id: String { rawValue }
 
+    /// "frontDelts" → "Front Delts": split the camelCase raw value and capitalize.
     var displayName: String {
-        switch self {
-        case .chest:      return "Chest"
-        case .lats:       return "Lats"
-        case .upperBack:  return "Upper Back"
-        case .frontDelts: return "Front Delts"
-        case .sideDelts:  return "Side Delts"
-        case .rearDelts:  return "Rear Delts"
-        case .biceps:     return "Biceps"
-        case .triceps:    return "Triceps"
-        case .forearms:   return "Forearms"
-        case .abs:        return "Abs"
-        case .quads:      return "Quads"
-        case .hamstrings: return "Hamstrings"
-        case .glutes:     return "Glutes"
-        case .calves:     return "Calves"
-        case .cardio:     return "Cardio"
-        case .traps:      return "Traps"
-        case .obliques:   return "Obliques"
-        case .lowerBack:  return "Lower Back"
-        case .serratus:   return "Serratus"
-        }
+        rawValue.reduce(into: "") { $0 += $1.isUppercase ? " \($1)" : String($1) }.capitalized
     }
 }
 
@@ -175,6 +155,16 @@ struct MuscleCatalog {
     }
 }
 
+extension Double {
+    /// Parses user keyboard input, accepting both "." and "," decimal
+    /// separators — decimal pads produce "," in many locales and
+    /// `Double.init(_:)` silently rejects it.
+    init?(userInput: String) {
+        self.init(userInput.trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: ",", with: "."))
+    }
+}
+
 enum WorkoutType: String, Codable, CaseIterable {
     case push = "Push"
     case pull = "Pull"
@@ -201,20 +191,15 @@ enum WorkoutLocation: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// One calendar day's creatine check-in. (The workout itself lives in
+/// ExerciseSession rows — this model exists only for the daily creatine flag.)
 @Model
 class WorkoutDay {
     var date: Date
-    var typeRawValue: String
     var tookCreatine: Bool
-    
-    var type: WorkoutType {
-        get { WorkoutType(rawValue: typeRawValue) ?? .rest }
-        set { typeRawValue = newValue.rawValue }
-    }
-    
-    init(date: Date, type: WorkoutType, tookCreatine: Bool = false) {
+
+    init(date: Date, tookCreatine: Bool = false) {
         self.date = Calendar.current.startOfDay(for: date)
-        self.typeRawValue = type.rawValue
         self.tookCreatine = tookCreatine
     }
 }
@@ -246,6 +231,9 @@ class Exercise {
 
     var targetMuscles: Set<TargetMuscle> {
         get {
+            // "none" marks an explicit empty selection; a truly empty array is
+            // a legacy row that predates muscle targets and gets the defaults.
+            if targetMuscleRawValues == ["none"] { return [] }
             let savedTargets = Set(targetMuscleRawValues.compactMap(TargetMuscle.init(rawValue:)))
             if savedTargets.isEmpty {
                 return MuscleCatalog.defaultTargets(for: name, type: type, isCardio: isCardio)
@@ -254,7 +242,7 @@ class Exercise {
             return savedTargets
         }
         set {
-            targetMuscleRawValues = newValue.map(\.rawValue).sorted()
+            targetMuscleRawValues = newValue.isEmpty ? ["none"] : newValue.map(\.rawValue).sorted()
         }
     }
     
@@ -266,6 +254,13 @@ class Exercise {
         self.shouldIncreaseWeight = false
         self.targetMuscleRawValues = MuscleCatalog.defaultTargets(for: name, type: type, isCardio: isCardio).map(\.rawValue).sorted()
         self.locationRawValue = location.rawValue
+    }
+}
+
+extension Exercise {
+    /// Whether this exercise already has a session logged today.
+    var isCompletedToday: Bool {
+        sessions.contains { Calendar.current.isDateInToday($0.date) }
     }
 }
 

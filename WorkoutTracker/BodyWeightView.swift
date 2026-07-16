@@ -14,7 +14,6 @@ private enum BodySection: String, CaseIterable, Identifiable {
 /// with a segmented bar at the top.
 struct BodyWeightView: View {
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
 
     @Query(sort: \BodyWeightEntry.date, order: .reverse) private var entries: [BodyWeightEntry]
     @Query private var workoutDays: [WorkoutDay]
@@ -76,7 +75,7 @@ struct BodyWeightView: View {
                     .padding(.bottom, 24)
                 }
             }
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Body")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -102,24 +101,7 @@ struct BodyWeightView: View {
                     .themedPresentation()
                     .presentationDetents([.medium])
             }
-            .confirmationDialog(
-                "Delete this entry?",
-                isPresented: Binding(
-                    get: { entryToDelete != nil },
-                    set: { if !$0 { entryToDelete = nil } }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    Haptics.shared.play(.destructive)
-                    if let entry = entryToDelete {
-                        context.delete(entry)
-                        try? context.save()
-                    }
-                    entryToDelete = nil
-                }
-                Button("Cancel", role: .cancel) { entryToDelete = nil }
-            }
+            .deleteConfirmation("Delete this entry?", item: $entryToDelete, context: context)
         }
     }
 
@@ -151,12 +133,12 @@ struct BodyWeightView: View {
 
             if let latest = entries.first {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(TrainingEngine.formatWeight(latest.weight))
+                    Text(latest.weight.formatted())
                         .font(.system(size: 44, weight: .heavy, design: .rounded))
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     Text("lb")
                         .appHeadingStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Spacer()
                     if let rate = weeklyRate {
                         VStack(alignment: .trailing, spacing: 2) {
@@ -165,10 +147,10 @@ struct BodyWeightView: View {
                                 Text("\(String(format: "%+.1f", rate)) lb")
                             }
                             .font(.system(size: 15, weight: .bold, design: .rounded))
-                            .foregroundColor(rate > 0.05 ? .appDanger : (rate < -0.05 ? .appSuccess : themeManager.secondaryText))
+                            .foregroundColor(rate > 0.05 ? .appDanger : (rate < -0.05 ? .appSuccess : Color.appSecondaryText))
                             Text("per week")
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(themeManager.secondaryText)
+                                .foregroundColor(Color.appSecondaryText)
                         }
                     }
                 }
@@ -179,11 +161,11 @@ struct BodyWeightView: View {
 
                 Text("Logged \(latest.date.formatted(.relative(presentation: .named)))")
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             } else {
                 Text("No entries yet — tap + to log your first weigh-in.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -228,7 +210,7 @@ struct BodyWeightView: View {
                     .foregroundStyle(Color.appAccent.opacity(0.9))
                     .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .annotation(position: .top, alignment: .leading) {
-                        Text("Goal \(TrainingEngine.formatWeight(weightGoal))")
+                        Text("Goal \(weightGoal.formatted())")
                             .font(.system(size: 10, weight: .bold))
                             .foregroundColor(.appAccent)
                     }
@@ -241,12 +223,12 @@ struct BodyWeightView: View {
         }
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine().foregroundStyle(themeManager.cardBorder.opacity(0.4))
+                AxisGridLine().foregroundStyle(Color.appCardBorder.opacity(0.4))
                 AxisValueLabel {
                     if let w = value.as(Double.self) {
                         Text("\(Int(w))")
                             .font(.system(size: 10))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                 }
             }
@@ -270,6 +252,14 @@ struct BodyWeightView: View {
 
     // MARK: - Weight goal
 
+    /// 0...1 fraction of the start→goal distance covered so far. Signed, so
+    /// moving *away* from the goal reads 0 instead of filling the bar.
+    private func goalFraction(current: Double) -> Double {
+        let total = goalStartWeight - weightGoal
+        guard abs(total) > 0.01 else { return 1 }
+        return min(max((goalStartWeight - current) / total, 0), 1)
+    }
+
     private var goalCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -285,30 +275,30 @@ struct BodyWeightView: View {
                 let remaining = latest.weight - weightGoal
                 let losing = remaining > 0
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(TrainingEngine.formatWeight(weightGoal))
+                    Text(weightGoal.formatted())
                         .font(.system(size: 30, weight: .heavy, design: .rounded))
                         .foregroundColor(.appAccent)
                     Text("lb")
                         .appHeadingStyle()
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                     Spacer()
                     if let date = goalDate {
                         Text("by \(date.formatted(.dateTime.month(.abbreviated).day().year()))")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                 }
 
-                GoalProgressBar(start: goalStartWeight, current: latest.weight, goal: weightGoal)
+                EmberBar(fraction: goalFraction(current: latest.weight))
 
                 Text(goalStatusText(remaining: remaining, losing: losing))
                     .appCaptionStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Set a target weight and date to track progress against it.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
         }
         .padding(16)
@@ -326,7 +316,7 @@ struct BodyWeightView: View {
         if absRemaining < 0.1 {
             return "🎉 You've hit your goal weight!"
         }
-        var text = "\(TrainingEngine.formatWeight(absRemaining)) lb to \(losing ? "lose" : "gain")."
+        var text = "\(absRemaining.formatted()) lb to \(losing ? "lose" : "gain")."
         if let date = goalDate {
             let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: Date()), to: Calendar.current.startOfDay(for: date)).day ?? 0
             if days > 0 {
@@ -397,16 +387,16 @@ struct BodyWeightView: View {
                     VStack(spacing: 4) {
                         Text(day.formatted(.dateTime.weekday(.narrow)))
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                         Circle()
-                            .fill(tookCreatine(on: day) ? Color.appCreatine : themeManager.inputBackground)
+                            .fill(tookCreatine(on: day) ? Color.appCreatine : Color.appInputBackground)
                             .frame(width: 26, height: 26)
                             .overlay(
                                 Circle().stroke(isToday ? Color.appAccent : .clear, lineWidth: 2)
                             )
                         Text(day.formatted(.dateTime.day()))
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
@@ -458,7 +448,7 @@ struct BodyWeightView: View {
                     .hapticButton(took ? .toggleOff : .toggleOn, pressScale: 0.98)
                 }
                 .padding(12)
-                .background(themeManager.inputBackground.opacity(0.5))
+                .background(Color.appInputBackground.opacity(0.5))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
@@ -478,7 +468,7 @@ struct BodyWeightView: View {
             SectionKicker(text: "Progress Photos")
             Text("Progress photos are turned off. Enable them in Settings to start a timeline.")
                 .appBodyStyle()
-                .foregroundColor(themeManager.secondaryText)
+                .foregroundColor(Color.appSecondaryText)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -494,7 +484,7 @@ struct BodyWeightView: View {
                     Spacer()
                     Image(systemName: "lock.fill")
                         .font(.system(size: 13))
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 Button {
                     showingUnlockPrompt = true
@@ -560,24 +550,24 @@ struct BodyWeightView: View {
             if entries.isEmpty {
                 Text("Weigh-ins will appear here.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             ForEach(Array(entries.prefix(30)), id: \.persistentModelID) { entry in
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(TrainingEngine.formatWeight(entry.weight)) lb")
+                        Text("\(entry.weight.formatted()) lb")
                             .appBodyStyle()
                             .fontWeight(.semibold)
-                            .foregroundColor(themeManager.primaryText)
+                            .foregroundColor(Color.appPrimaryText)
                         Text(entry.date.formatted(date: .abbreviated, time: .omitted))
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                     Spacer()
                     if !entry.notes.isEmpty {
                         Text(entry.notes)
                             .appCaptionStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                             .lineLimit(1)
                     }
                     Button {
@@ -601,36 +591,6 @@ struct BodyWeightView: View {
     }
 }
 
-// MARK: - Goal progress bar
-
-private struct GoalProgressBar: View {
-    let start: Double
-    let current: Double
-    let goal: Double
-
-    @EnvironmentObject var themeManager: ThemeManager
-
-    /// 0...1 fraction of the start→goal distance covered so far.
-    private var fraction: Double {
-        let total = abs(goal - start)
-        guard total > 0.01 else { return 1 }
-        let done = abs(current - start)
-        return min(max(done / total, 0), 1)
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(themeManager.inputBackground)
-                Capsule()
-                    .fill(LinearGradient.ember)
-                    .frame(width: max(8, geo.size.width * fraction))
-            }
-        }
-        .frame(height: 10)
-    }
-}
-
 // MARK: - Weight goal sheet
 
 private struct WeightGoalSheet: View {
@@ -638,7 +598,6 @@ private struct WeightGoalSheet: View {
     @Binding var dateStamp: Double
 
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject var themeManager: ThemeManager
 
     @State private var goalText = ""
     @State private var targetDate = Date()
@@ -649,7 +608,7 @@ private struct WeightGoalSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Target weight")
                         .appBodyStyle()
-                        .foregroundColor(themeManager.primaryText)
+                        .foregroundColor(Color.appPrimaryText)
                     HStack {
                         TextField("Weight", text: $goalText)
                             .keyboardType(.decimalPad)
@@ -657,13 +616,13 @@ private struct WeightGoalSheet: View {
                             .appInputStyle()
                         Text("lb")
                             .appHeadingStyle()
-                            .foregroundColor(themeManager.secondaryText)
+                            .foregroundColor(Color.appSecondaryText)
                     }
                 }
 
                 DatePicker("Target date", selection: $targetDate, in: Date()..., displayedComponents: .date)
                     .tint(.appAccent)
-                    .foregroundColor(themeManager.primaryText)
+                    .foregroundColor(Color.appPrimaryText)
 
                 Button("Save Goal") {
                     if let value = Double(goalText), value > 0 {
@@ -688,7 +647,7 @@ private struct WeightGoalSheet: View {
                 Spacer()
             }
             .padding(20)
-            .background(themeManager.background.ignoresSafeArea())
+            .background(Color.appBackground.ignoresSafeArea())
             .navigationTitle("Weight Goal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -698,7 +657,7 @@ private struct WeightGoalSheet: View {
                 }
             }
             .onAppear {
-                if goal > 0 { goalText = TrainingEngine.formatWeight(goal) }
+                if goal > 0 { goalText = goal.formatted() }
                 if dateStamp > 0 { targetDate = Date(timeIntervalSince1970: dateStamp) }
             }
         }
@@ -711,7 +670,6 @@ private struct PoseTimelineCard: View {
     let pose: ProgressPose
     let photos: [ProgressPhoto]
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -720,7 +678,7 @@ private struct PoseTimelineCard: View {
                 if !photos.isEmpty {
                     Text("\(photos.count)")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(themeManager.secondaryText)
+                        .foregroundColor(Color.appSecondaryText)
                 }
                 Spacer()
                 PhotoPickerButton(pose: pose)
@@ -729,7 +687,7 @@ private struct PoseTimelineCard: View {
             if photos.isEmpty {
                 Text("No \(pose.rawValue.lowercased()) shots yet — add one to start comparing.")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             } else {
                 // Oldest → newest so scrolling right walks forward in time.
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -782,7 +740,6 @@ private struct ProgressPhotoCard: View {
     let photo: ProgressPhoto
 
     @Environment(\.modelContext) private var context
-    @EnvironmentObject var themeManager: ThemeManager
     @State private var confirmingDelete = false
 
     var body: some View {
@@ -797,7 +754,7 @@ private struct ProgressPhotoCard: View {
             HStack {
                 Text(photo.date.formatted(date: .abbreviated, time: .omitted))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
                 Spacer()
                 Button {
                     confirmingDelete = true

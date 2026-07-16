@@ -242,7 +242,7 @@ enum TrainingEngine {
                     return ProgressionAdvice(
                         kind: .decrease,
                         weight: next,
-                        reason: "You cleared \(formatWeight(top)) lb of assist for \(minReps)+ reps — drop to \(formatWeight(next)) lb to make it harder."
+                        reason: "You cleared \(top.formatted()) lb of assist for \(minReps)+ reps — drop to \(next.formatted()) lb to make it harder."
                     )
                 }
                 return ProgressionAdvice(
@@ -254,7 +254,7 @@ enum TrainingEngine {
             return ProgressionAdvice(
                 kind: .hold,
                 weight: top,
-                reason: "Hold \(formatWeight(top)) lb of assist — own 8+ clean reps every set, then we take some off."
+                reason: "Hold \(top.formatted()) lb of assist — own 8+ clean reps every set, then we take some off."
             )
         }
 
@@ -288,7 +288,7 @@ enum TrainingEngine {
                 return ProgressionAdvice(
                     kind: .decrease,
                     weight: deload,
-                    reason: "\(grinderStreak) all-out sessions stuck at \(formatWeight(top)) lb. Deload to \(formatWeight(deload)) lb, bank easy reps, and run it back up."
+                    reason: "\(grinderStreak) all-out sessions stuck at \(top.formatted()) lb. Deload to \(deload.formatted()) lb, bank easy reps, and run it back up."
                 )
             }
         }
@@ -302,20 +302,20 @@ enum TrainingEngine {
                 return ProgressionAdvice(
                     kind: .increase,
                     weight: top + jump,
-                    reason: "Every set hit \(hypertrophyRepTop) at \(formatWeight(top)) lb — go up \(formatWeight(jump)) lb and build back from 8s."
+                    reason: "Every set hit \(hypertrophyRepTop) at \(top.formatted()) lb — go up \(jump.formatted()) lb and build back from 8s."
                 )
             }
             if avgDifficulty >= 4.5 {
                 return ProgressionAdvice(
                     kind: .hold,
                     weight: top,
-                    reason: "Last session was a grinder. Own \(formatWeight(top)) lb before chasing more reps."
+                    reason: "Last session was a grinder. Own \(top.formatted()) lb before chasing more reps."
                 )
             }
             return ProgressionAdvice(
                 kind: .hold,
                 weight: top,
-                reason: "Add reps before weight: your lowest set was \(minReps) — get every set to \(hypertrophyRepTop) at \(formatWeight(top)) lb to earn the bump."
+                reason: "Add reps before weight: your lowest set was \(minReps) — get every set to \(hypertrophyRepTop) at \(top.formatted()) lb to earn the bump."
             )
 
         case .strength:
@@ -328,7 +328,7 @@ enum TrainingEngine {
                     return ProgressionAdvice(
                         kind: .decrease,
                         weight: deload,
-                        reason: "\(failStreak) sessions missing \(strengthRepFloor)s at \(formatWeight(top)) lb. Deload to \(formatWeight(deload)) lb and run it back up."
+                        reason: "\(failStreak) sessions missing \(strengthRepFloor)s at \(top.formatted()) lb. Deload to \(deload.formatted()) lb and run it back up."
                     )
                 }
             }
@@ -336,13 +336,13 @@ enum TrainingEngine {
                 return ProgressionAdvice(
                     kind: .increase,
                     weight: top + jump,
-                    reason: "All \(setCount) sets at \(strengthRepFloor)+ reps with \(formatWeight(top)) lb — linear progression says add \(formatWeight(jump)) lb."
+                    reason: "All \(setCount) sets at \(strengthRepFloor)+ reps with \(top.formatted()) lb — linear progression says add \(jump.formatted()) lb."
                 )
             }
             return ProgressionAdvice(
                 kind: .hold,
                 weight: top,
-                reason: "You missed \(strengthRepFloor) reps on a set at \(formatWeight(top)) lb — repeat it and finish every set next time."
+                reason: "You missed \(strengthRepFloor) reps on a set at \(top.formatted()) lb — repeat it and finish every set next time."
             )
         }
     }
@@ -449,9 +449,4 @@ enum TrainingEngine {
         sessions.flatMap(\.sets).reduce(0) { $0 + $1.weight * Double($1.reps) }
     }
 
-    // MARK: - Formatting helpers
-
-    static func formatWeight(_ weight: Double) -> String {
-        weight.formatted()
-    }
 }

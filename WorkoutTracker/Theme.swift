@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 internal import Combine
 
 // MARK: - Font & Appearance choices (persisted keys unchanged for launch-arg compat)
@@ -189,16 +190,13 @@ extension Color {
     static var appCardio: Color { themed(\.cardio) }
     static var appCreatine: Color { themed(\.creatine) }
 
-    static var heatLow: Color { themed(\.heatLow) }
-    static var heatHigh: Color { themed(\.heatHigh) }
-
     /// Interpolated heat color for a 0...1 intensity — correct in both
     /// appearances and tinted to the active theme.
     static func heat(_ intensity: Double) -> Color {
         let f = min(max(intensity, 0), 1)
         return Color(uiColor: UIColor { traits in
             let palette = AppTheme.current.palette(dark: traits.userInterfaceStyle == .dark)
-            return UIColor(palette.heatLow.interpolate(to: palette.heatHigh, fraction: f))
+            return UIColor(palette.heatLow.mix(with: palette.heatHigh, by: f, in: .device))
         })
     }
 }
@@ -260,14 +258,6 @@ class ThemeManager: ObservableObject {
         self.theme = AppTheme.current
     }
 
-    var background: Color { .appBackground }
-    var cardBackground: Color { .appCardBackground }
-    var inputBackground: Color { .appInputBackground }
-    var primaryText: Color { .appPrimaryText }
-    var secondaryText: Color { .appSecondaryText }
-    var cardBorder: Color { .appCardBorder }
-    var cardShadow: Color { .appCardShadow }
-
     var colorScheme: ColorScheme? {
         appearance.colorScheme
     }
@@ -312,18 +302,17 @@ struct SectionKicker: View {
 // MARK: - Surfaces
 
 struct CardModifier: ViewModifier {
-    @EnvironmentObject var themeManager: ThemeManager
     private let cornerRadius: CGFloat = 18
 
     func body(content: Content) -> some View {
         content
-            .background(themeManager.cardBackground)
+            .background(Color.appCardBackground)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(themeManager.cardBorder.opacity(0.6), lineWidth: 1)
+                    .stroke(Color.appCardBorder.opacity(0.6), lineWidth: 1)
             )
-            .shadow(color: themeManager.cardShadow, radius: 8, x: 0, y: 3)
+            .shadow(color: Color.appCardShadow, radius: 8, x: 0, y: 3)
     }
 }
 
@@ -339,14 +328,13 @@ extension View {
 }
 
 struct InputModifier: ViewModifier {
-    @EnvironmentObject var themeManager: ThemeManager
 
     func body(content: Content) -> some View {
         content
             .padding(12)
-            .background(themeManager.inputBackground)
+            .background(Color.appInputBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .foregroundColor(themeManager.primaryText)
+            .foregroundColor(Color.appPrimaryText)
     }
 }
 
@@ -359,7 +347,6 @@ struct SetRow: View {
     let weight: Double
     let difficulty: Int
 
-    @EnvironmentObject var themeManager: ThemeManager
 
     var body: some View {
         HStack(spacing: 12) {
@@ -371,15 +358,33 @@ struct SetRow: View {
                 .clipShape(Circle())
             Text("\(reps) reps")
                 .appBodyStyle()
-                .foregroundColor(themeManager.primaryText)
+                .foregroundColor(Color.appPrimaryText)
             if weight > 0 {
-                Text("@ \(TrainingEngine.formatWeight(weight)) lb")
+                Text("@ \(weight.formatted()) lb")
                     .appBodyStyle()
-                    .foregroundColor(themeManager.secondaryText)
+                    .foregroundColor(Color.appSecondaryText)
             }
             Spacer()
             DifficultyDots(rating: difficulty, size: 8)
         }
+    }
+}
+
+/// Themed gradient progress capsule for a 0...1 fraction. Shared by the
+/// weight-goal card and the weekly volume bars.
+struct EmberBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.appInputBackground)
+                Capsule()
+                    .fill(LinearGradient.ember)
+                    .frame(width: max(8, geo.size.width * min(max(fraction, 0), 1)))
+            }
+        }
+        .frame(height: 10)
     }
 }
 
@@ -437,6 +442,44 @@ struct QuietButtonStyle: ButtonStyle {
             .onChange(of: configuration.isPressed) { _, pressed in
                 if pressed { Haptics.shared.play(.soft) }
             }
+    }
+}
+
+// MARK: - Delete confirmation
+
+extension View {
+    /// The shared destructive-delete flow: a confirmation dialog bound to an
+    /// optional SwiftData row that, on Delete, plays the destructive haptic,
+    /// removes the row, and saves. Used for sessions, weight entries, and
+    /// exercises alike.
+    func deleteConfirmation<Item: PersistentModel>(
+        _ title: String,
+        item: Binding<Item?>,
+        context: ModelContext,
+        message: ((Item) -> String)? = nil
+    ) -> some View {
+        confirmationDialog(
+            title,
+            isPresented: Binding(
+                get: { item.wrappedValue != nil },
+                set: { if !$0 { item.wrappedValue = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Haptics.shared.play(.destructive)
+                if let value = item.wrappedValue {
+                    context.delete(value)
+                    try? context.save()
+                }
+                item.wrappedValue = nil
+            }
+            Button("Cancel", role: .cancel) { item.wrappedValue = nil }
+        } message: {
+            if let value = item.wrappedValue, let message {
+                Text(message(value))
+            }
+        }
     }
 }
 
