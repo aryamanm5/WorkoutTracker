@@ -167,12 +167,13 @@ struct SessionDetailView: View {
         .navigationTitle(session.exercise?.name ?? "Session")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Plain link on purpose: a custom ButtonStyle on a toolbar item
+            // breaks the system's sizing and truncates the label ("Ed…").
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink("Edit") {
                     EditSessionView(session: session)
                 }
                 .fontWeight(.semibold)
-                .hapticButton(.tap, pressScale: 1)
             }
         }
     }

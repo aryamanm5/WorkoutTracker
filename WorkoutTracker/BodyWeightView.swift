@@ -5,13 +5,14 @@ import PhotosUI
 
 private enum BodySection: String, CaseIterable, Identifiable {
     case weight = "Weight"
+    case measurements = "Measure"
     case creatine = "Creatine"
     case photos = "Photos"
     var id: String { rawValue }
 }
 
-/// Body tab: split into Weight, Creatine, and Progress Photos pages, toggled
-/// with a segmented bar at the top.
+/// Body tab: split into Weight, Measurements, Creatine, and Progress Photos
+/// pages, toggled with a segmented bar at the top.
 struct BodyWeightView: View {
     @Environment(\.modelContext) private var context
 
@@ -61,6 +62,8 @@ struct BodyWeightView: View {
                             weightHeroCard
                             goalCard
                             historyCard
+                        case .measurements:
+                            BodyMeasurementsSection()
                         case .creatine:
                             creatineCard
                         case .photos:
@@ -651,9 +654,14 @@ private struct WeightGoalSheet: View {
             .navigationTitle("Weight Goal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Plain button on purpose: a custom ButtonStyle on a toolbar
+                // item breaks the system's sizing and truncates the label
+                // ("Ca…"). Same rule everywhere a toolbar shows text.
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .hapticButton(.tap, pressScale: 1)
+                    Button("Cancel") {
+                        Haptics.shared.play(.tap)
+                        dismiss()
+                    }
                 }
             }
             .onAppear {

@@ -6,8 +6,6 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject var themeManager: ThemeManager
 
-    @Query(sort: \BodyWeightEntry.date, order: .reverse) private var weightEntries: [BodyWeightEntry]
-
     @AppStorage("restTargetSeconds") private var restTarget: Int = 90
     @AppStorage("trainingGoal") private var trainingGoal: TrainingEngine.TrainingGoal = .hypertrophy
     @AppStorage("legPressSledWeight") private var legPressSledWeight: Double = 167
@@ -386,7 +384,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(icon: "square.and.arrow.up", color: .appSuccess,
                             title: "Export CSV",
-                            subtitle: "All workouts and body weight history")
+                            subtitle: "Workouts, measurements, and body weight")
             }
             .hapticRow()
             Divider()
@@ -430,67 +428,10 @@ struct SettingsView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: - CSV export
+    // MARK: - CSV export / import
 
     private func exportToCSV() {
-        var csvString = "Date,Exercise,Type,IsCardio,Location,SetNumber,Reps,Weight(lbs),Difficulty,RestTime(s),SetNotes,MachineSettings,WarmUp(min),Run(min),CoolDown(min),Speed,Intensity,SessionNotes\n"
-
-        // POSIX locale so 12/24-hour overrides and non-Gregorian device
-        // calendars can't corrupt the exported dates. Seconds precision keeps
-        // distinct same-minute sessions distinct on re-import.
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
-        // Fetch fresh with relationships faulted in
-        let descriptor = FetchDescriptor<ExerciseSession>(
-            sortBy: [SortDescriptor(\ExerciseSession.date)]
-        )
-
-        guard let sessions = try? context.fetch(descriptor) else { return }
-
-        for session in sessions {
-            guard let exercise = session.exercise else { continue }
-
-            let dateStr = formatter.string(from: session.date)
-            let exName = escapeCSV(exercise.name)
-            let exType = exercise.type.rawValue
-            let isCardio = exercise.isCardio ? "Yes" : "No"
-            let location = escapeCSV(session.location.rawValue)
-            let settings = escapeCSV(session.machineSettings)
-            let sessionNotes = escapeCSV(session.notes)
-
-            if exercise.isCardio {
-                let wUp   = session.warmUpTime.map    { String($0) } ?? ""
-                let run   = session.runningTime.map   { String($0) } ?? ""
-                let cDown = session.coolDownTime.map  { String($0) } ?? ""
-                let speed = session.runningSpeed.map  { String($0) } ?? ""
-                let intensity = session.intensityRating.map { String($0) } ?? ""
-
-                csvString.append("\(dateStr),\(exName),\(exType),\(isCardio),\(location),,,,,,,\(settings),\(wUp),\(run),\(cDown),\(speed),\(intensity),\(sessionNotes)\n")
-            } else {
-                let sortedSets = session.sets.sorted { $0.setNumber < $1.setNumber }
-
-                if sortedSets.isEmpty {
-                    csvString.append("\(dateStr),\(exName),\(exType),\(isCardio),\(location),,,,,,,\(settings),,,,,,\(sessionNotes)\n")
-                } else {
-                    for set in sortedSets {
-                        let setNotes  = escapeCSV(set.notes)
-                        let restTime  = set.restTimeSeconds.map { String($0) } ?? ""
-                        csvString.append("\(dateStr),\(exName),\(exType),\(isCardio),\(location),\(set.setNumber),\(set.reps),\(set.weight),\(set.difficulty),\(restTime),\(setNotes),\(settings),,,,,,\(sessionNotes)\n")
-                    }
-                }
-            }
-        }
-
-        if !weightEntries.isEmpty {
-            csvString.append("\n\nBody Weight History\nDate,Weight(lbs),Notes\n")
-            for entry in weightEntries {
-                let dateStr = formatter.string(from: entry.date)
-                let notes = escapeCSV(entry.notes)
-                csvString.append("\(dateStr),\(entry.weight),\(notes)\n")
-            }
-        }
+        let csvString = WorkoutCSV(context: context).exportString()
 
         let fileFormatter = DateFormatter()
         fileFormatter.dateFormat = "yyyy-MM-dd"
@@ -506,16 +447,6 @@ struct SettingsView: View {
         }
     }
 
-    private func escapeCSV(_ string: String) -> String {
-        var result = string.replacingOccurrences(of: "\"", with: "\"\"")
-        if result.contains(",") || result.contains("\n") || result.contains("\"") {
-            result = "\"\(result)\""
-        }
-        return result
-    }
-
-    // MARK: - CSV import
-
     private func importCSV(from result: Result<[URL], Error>) {
         do {
             guard let url = try result.get().first else { return }
@@ -527,9 +458,9 @@ struct SettingsView: View {
             }
 
             let csvString = try String(contentsOf: url, encoding: .utf8)
-            let summary = try importCSVString(csvString)
+            let summary = WorkoutCSV(context: context).importString(csvString)
             try context.save()
-            var message = "Imported \(summary.sessions) sessions, \(summary.sets) sets, and \(summary.weights) body weight entries."
+            var message = "Imported \(summary.sessions) sessions, \(summary.sets) sets, \(summary.measurements) measurements, and \(summary.weights) body weight entries."
             if summary.skipped > 0 {
                 message += " Skipped \(summary.skipped) entries that were already in the app."
             }
@@ -537,264 +468,6 @@ struct SettingsView: View {
         } catch {
             importMessage = "Import failed: \(error.localizedDescription)"
         }
-    }
-
-    private func importCSVString(_ csvString: String) throws -> (sessions: Int, sets: Int, weights: Int, skipped: Int) {
-        let rows = parseCSVRows(csvString)
-        var index = 0
-        var sessionsImported = 0
-        var setsImported = 0
-        var weightsImported = 0
-        var duplicatesSkipped = 0
-        // Accept both the current seconds-precision format and the legacy
-        // minute-precision one from older exports.
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        let legacyDateFormatter = DateFormatter()
-        legacyDateFormatter.locale = Locale(identifier: "en_US_POSIX")
-        legacyDateFormatter.dateFormat = "yyyy-MM-dd HH:mm"
-        func parseDate(_ text: String) -> Date? {
-            dateFormatter.date(from: text) ?? legacyDateFormatter.date(from: text)
-        }
-
-        // Look up exercises against the live context (the view's @Query snapshot
-        // doesn't refresh mid-import, which used to duplicate every exercise),
-        // and remember what already exists so re-importing an export is a no-op.
-        var exerciseCache: [String: Exercise] = [:]
-        var existingSessionKeys = Set<String>()
-        var existingWeightKeys = Set<String>()
-
-        if let storedExercises = try? context.fetch(FetchDescriptor<Exercise>()) {
-            for exercise in storedExercises {
-                exerciseCache["\(exercise.name.lowercased())|\(exercise.location.rawValue)"] = exercise
-                for session in exercise.sessions {
-                    existingSessionKeys.insert(sessionDedupKey(exerciseName: exercise.name, date: session.date))
-                }
-            }
-        }
-        if let storedWeights = try? context.fetch(FetchDescriptor<BodyWeightEntry>()) {
-            for entry in storedWeights {
-                existingWeightKeys.insert(weightDedupKey(date: entry.date, weight: entry.weight))
-            }
-        }
-
-        while index < rows.count {
-            let row = rows[index]
-            if row.first == "Date", row.contains("Exercise") {
-                let header = headerMap(row)
-                index += 1
-                var importedSessions: [String: ExerciseSession] = [:]
-
-                while index < rows.count {
-                    let workoutRow = rows[index]
-                    if workoutRow.isEmpty || workoutRow.first == "Body Weight History" {
-                        break
-                    }
-                    guard let dateText = value(in: workoutRow, header: header, column: "Date"),
-                          let date = parseDate(dateText),
-                          let exerciseName = value(in: workoutRow, header: header, column: "Exercise"),
-                          !exerciseName.isEmpty,
-                          let typeText = value(in: workoutRow, header: header, column: "Type") else {
-                        index += 1
-                        continue
-                    }
-
-                    if existingSessionKeys.contains(sessionDedupKey(exerciseName: exerciseName, date: date)) {
-                        duplicatesSkipped += 1
-                        index += 1
-                        continue
-                    }
-
-                    let workoutType = WorkoutType(rawValue: typeText) ?? .push
-                    let isCardio = value(in: workoutRow, header: header, column: "IsCardio") == "Yes"
-                    let locationText = value(in: workoutRow, header: header, column: "Location") ?? WorkoutLocation.gym.rawValue
-                    let location = WorkoutLocation.from(stored: locationText)
-                    let exercise = findOrCreateExercise(named: exerciseName, type: workoutType, isCardio: isCardio, location: location, cache: &exerciseCache)
-                    let machineSettings = value(in: workoutRow, header: header, column: "MachineSettings") ?? ""
-                    let sessionNotes = value(in: workoutRow, header: header, column: "SessionNotes") ?? ""
-                    let sessionKey = "\(date.timeIntervalSince1970)-\(exerciseName.lowercased())-\(machineSettings)-\(sessionNotes)"
-                    let session = importedSessions[sessionKey] ?? {
-                        let newSession = ExerciseSession(
-                            date: date,
-                            machineSettings: machineSettings,
-                            totalSets: 0,
-                            notes: sessionNotes,
-                            location: location,
-                            warmUpTime: doubleValue(in: workoutRow, header: header, column: "WarmUp(min)"),
-                            runningTime: doubleValue(in: workoutRow, header: header, column: "Run(min)"),
-                            coolDownTime: doubleValue(in: workoutRow, header: header, column: "CoolDown(min)"),
-                            runningSpeed: doubleValue(in: workoutRow, header: header, column: "Speed"),
-                            intensityRating: intValue(in: workoutRow, header: header, column: "Intensity")
-                        )
-                        context.insert(newSession)
-                        newSession.exercise = exercise
-                        importedSessions[sessionKey] = newSession
-                        sessionsImported += 1
-                        return newSession
-                    }()
-
-                    if let setNumber = intValue(in: workoutRow, header: header, column: "SetNumber") {
-                        let loggedSet = LoggedSet(
-                            setNumber: setNumber,
-                            reps: intValue(in: workoutRow, header: header, column: "Reps") ?? 0,
-                            weight: doubleValue(in: workoutRow, header: header, column: "Weight(lbs)") ?? 0,
-                            notes: value(in: workoutRow, header: header, column: "SetNotes") ?? "",
-                            difficulty: intValue(in: workoutRow, header: header, column: "Difficulty") ?? 3,
-                            restTimeSeconds: intValue(in: workoutRow, header: header, column: "RestTime(s)")
-                        )
-                        context.insert(loggedSet)
-                        loggedSet.session = session
-                        session.totalSets += 1
-                        setsImported += 1
-                    }
-
-                    index += 1
-                }
-            } else if row.first == "Date", row.contains("Weight(lbs)") {
-                let header = headerMap(row)
-                index += 1
-
-                while index < rows.count {
-                    let weightRow = rows[index]
-                    guard !weightRow.isEmpty else {
-                        index += 1
-                        continue
-                    }
-
-                    guard let dateText = value(in: weightRow, header: header, column: "Date"),
-                          let date = parseDate(dateText),
-                          let weight = doubleValue(in: weightRow, header: header, column: "Weight(lbs)") else {
-                        // Skip the malformed row but keep importing the rest.
-                        index += 1
-                        continue
-                    }
-
-                    let weightKey = weightDedupKey(date: date, weight: weight)
-                    if existingWeightKeys.contains(weightKey) {
-                        duplicatesSkipped += 1
-                        index += 1
-                        continue
-                    }
-
-                    let entry = BodyWeightEntry(
-                        date: date,
-                        weight: weight,
-                        notes: value(in: weightRow, header: header, column: "Notes") ?? ""
-                    )
-                    context.insert(entry)
-                    existingWeightKeys.insert(weightKey)
-                    weightsImported += 1
-                    index += 1
-                }
-            } else {
-                index += 1
-            }
-        }
-
-        return (sessionsImported, setsImported, weightsImported, duplicatesSkipped)
-    }
-
-    /// Dedup compares at minute precision: stored dates carry sub-second
-    /// precision and legacy exports only carry minutes, so exact-timestamp
-    /// keys never matched and every re-import duplicated the whole file.
-    private func sessionDedupKey(exerciseName: String, date: Date) -> String {
-        "\(exerciseName.lowercased())|\(Int(date.timeIntervalSince1970 / 60))"
-    }
-
-    private func weightDedupKey(date: Date, weight: Double) -> String {
-        "\(Int(date.timeIntervalSince1970 / 60))|\(weight)"
-    }
-
-    private func findOrCreateExercise(named name: String, type: WorkoutType, isCardio: Bool, location: WorkoutLocation, cache: inout [String: Exercise]) -> Exercise {
-        // Home and gym libraries are separate, so the same name can exist
-        // once per location.
-        let key = "\(name.lowercased())|\(location.rawValue)"
-        if let existing = cache[key] {
-            // Never mutate an existing library entry from imported rows — an
-            // old export would silently undo later re-categorization.
-            return existing
-        }
-
-        let exercise = Exercise(name: name, type: type, isCardio: isCardio, location: location)
-        context.insert(exercise)
-        cache[key] = exercise
-        return exercise
-    }
-
-    private func headerMap(_ row: [String]) -> [String: Int] {
-        // First occurrence wins — `uniqueKeysWithValues` would crash the app
-        // on a hand-edited file with a repeated column name.
-        Dictionary(row.enumerated().map { ($0.element, $0.offset) },
-                   uniquingKeysWith: { first, _ in first })
-    }
-
-    private func value(in row: [String], header: [String: Int], column: String) -> String? {
-        guard let index = header[column], row.indices.contains(index) else { return nil }
-        let value = row[index]
-        return value.isEmpty ? nil : value
-    }
-
-    private func intValue(in row: [String], header: [String: Int], column: String) -> Int? {
-        value(in: row, header: header, column: column).flatMap(Int.init)
-    }
-
-    private func doubleValue(in row: [String], header: [String: Int], column: String) -> Double? {
-        value(in: row, header: header, column: column).flatMap(Double.init)
-    }
-
-    private func parseCSVRows(_ csvString: String) -> [[String]] {
-        var rows: [[String]] = []
-        var row: [String] = []
-        var field = ""
-        var isInsideQuotes = false
-        var iterator = csvString.makeIterator()
-
-        while let character = iterator.next() {
-            if character == "\"" {
-                if isInsideQuotes, let next = iterator.next() {
-                    if next == "\"" {
-                        field.append(next)
-                    } else {
-                        isInsideQuotes = false
-                        if next == "," {
-                            row.append(field)
-                            field = ""
-                        } else if next == "\n" {
-                            row.append(field)
-                            rows.append(row)
-                            row = []
-                            field = ""
-                        } else if next != "\r" {
-                            field.append(next)
-                        }
-                    }
-                } else {
-                    isInsideQuotes.toggle()
-                }
-            } else if character == ",", !isInsideQuotes {
-                row.append(field)
-                field = ""
-            } else if character == "\n", !isInsideQuotes {
-                row.append(field)
-                if row.contains(where: { !$0.isEmpty }) {
-                    rows.append(row)
-                } else {
-                    rows.append([])
-                }
-                row = []
-                field = ""
-            } else if character != "\r" {
-                field.append(character)
-            }
-        }
-
-        if !field.isEmpty || !row.isEmpty {
-            row.append(field)
-            rows.append(row)
-        }
-
-        return rows
     }
 }
 
@@ -837,6 +510,20 @@ struct ManageExercisesView: View {
                                     }
                                     .hapticRow()
                                     .contextMenu {
+                                        let other: WorkoutLocation = exercise.location == .home ? .gym : .home
+                                        Button {
+                                            exercise.location = other
+                                            try? context.save()
+                                            Haptics.shared.play(.selection)
+                                        } label: {
+                                            Label("Move to \(other.rawValue)", systemImage: other.icon)
+                                        }
+                                        Button {
+                                            duplicate(exercise, to: other)
+                                        } label: {
+                                            Label("Copy to \(other.rawValue)", systemImage: "plus.square.on.square")
+                                        }
+                                        Divider()
                                         Button(role: .destructive) {
                                             exerciseToDelete = exercise
                                         } label: {
@@ -877,6 +564,22 @@ struct ManageExercisesView: View {
         .deleteConfirmation("Delete \(exerciseToDelete?.name ?? "exercise")?", item: $exerciseToDelete, context: context) { _ in
             "This also deletes all its logged history."
         }
+    }
+
+    /// A separate exercise at the other location: same name, type, and muscle
+    /// targets, but its own history — home and gym weights and machine
+    /// settings differ, so they must never share progression data.
+    private func duplicate(_ exercise: Exercise, to location: WorkoutLocation) {
+        let copy = Exercise(
+            name: exercise.name,
+            type: exercise.type,
+            isCardio: exercise.isCardio,
+            location: location
+        )
+        copy.targetMuscleRawValues = exercise.targetMuscleRawValues
+        context.insert(copy)
+        try? context.save()
+        Haptics.shared.play(.setLogged)
     }
 
     private func exerciseRow(_ exercise: Exercise) -> some View {
@@ -967,10 +670,13 @@ struct ExerciseMuscleEditorView: View {
 
     @State private var selection: Set<TargetMuscle> = []
     @State private var loaded = false
+    @State private var copyCreated = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                locationCard
+
                 VStack(alignment: .leading, spacing: 10) {
                     SectionKicker(text: "Tap Muscles on the Body")
                     MuscleDiagramView(
@@ -1025,6 +731,63 @@ struct ExerciseMuscleEditorView: View {
             exercise.targetMuscles = selection
             try? context.save()
         }
+    }
+
+    /// Where this exercise lives. Moving it re-homes the exercise and all its
+    /// history; the copy button instead creates an independent twin at the
+    /// other location, since home and gym weights aren't interchangeable.
+    private var locationCard: some View {
+        let other: WorkoutLocation = exercise.location == .home ? .gym : .home
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionKicker(text: "Location")
+
+            Picker("Location", selection: Binding(
+                get: { exercise.location },
+                set: {
+                    exercise.location = $0
+                    try? context.save()
+                }
+            )) {
+                ForEach(WorkoutLocation.allCases) { loc in
+                    Text(loc.rawValue).tag(loc)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: exercise.location) { Haptics.shared.play(.selection) }
+
+            Text("Sessions only offer exercises from the location you're training at. Moving keeps this exercise's history.")
+                .appCaptionStyle()
+                .foregroundColor(Color.appSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                let copy = Exercise(
+                    name: exercise.name,
+                    type: exercise.type,
+                    isCardio: exercise.isCardio,
+                    location: other
+                )
+                copy.targetMuscleRawValues = exercise.targetMuscleRawValues
+                context.insert(copy)
+                try? context.save()
+                Haptics.shared.play(.setLogged)
+                copyCreated = true
+            } label: {
+                Label(copyCreated ? "Copy created ✓" : "Create a copy at \(other.rawValue)",
+                      systemImage: copyCreated ? "checkmark.circle.fill" : "plus.square.on.square")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(QuietButtonStyle())
+            .disabled(copyCreated)
+
+            Text("A copy tracks its own weights and settings — e.g. a home dumbbell press separate from the gym one.")
+                .appCaptionStyle()
+                .foregroundColor(Color.appSecondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
     }
 }
 

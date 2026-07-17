@@ -46,14 +46,13 @@ final class ScreenshotTests: XCTestCase {
             sleep(1)
             snap(app, "03_session_queue")
 
-            // Open the first exercise (rows are buttons whose label contains
-            // the exercise name) — this lands on the preview screen with the
-            // last workout and the coach's recommendation.
-            let benchRow = app.buttons.containing(
-                NSPredicate(format: "label CONTAINS 'Bench Press'")
+            // Open an exercise not yet trained today (rows already logged
+            // today open the session editor instead of the preview).
+            let dipsRow = app.buttons.containing(
+                NSPredicate(format: "label CONTAINS 'Tricep Dips'")
             ).firstMatch
-            if benchRow.waitForExistence(timeout: 5) {
-                benchRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            if dipsRow.waitForExistence(timeout: 5) {
+                dipsRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             }
             sleep(1)
             snap(app, "04_exercise_preview")
@@ -127,6 +126,138 @@ final class ScreenshotTests: XCTestCase {
         app.staticTexts["Rear Delt Fly"].firstMatch.tap()
         sleep(1)
         snap(app, "16_muscle_editor")
+    }
+
+    /// Drives the new flows: a session that stays on its day after finishing
+    /// an exercise, editing a completed exercise mid-session, and logging &
+    /// editing a body measurement.
+    func testNewFeatureFlows() throws {
+        let app = XCUIApplication()
+        // Past-only seed: today stays untrained, so the focus card shows the
+        // day name and the whole queue starts fresh.
+        app.launchArguments += ["-demoSeed", "1", "-demoSeedPastOnly", "1", "-resetData", "1"]
+        app.launch()
+        sleep(2)
+
+        // Force a push focus so the day is known. The menu tap occasionally
+        // doesn't land, so verify the card actually says "Push Day" and retry.
+        let switcher = app.buttons["Change focus"]
+        XCTAssertTrue(switcher.waitForExistence(timeout: 5))
+        var attempts = 0
+        while !app.staticTexts["Push Day"].firstMatch.exists && attempts < 4 {
+            switcher.tap()
+            let pushItem = app.buttons["Push Day"].firstMatch
+            if pushItem.waitForExistence(timeout: 3) {
+                pushItem.tap()
+            }
+            sleep(1)
+            attempts += 1
+        }
+        XCTAssertTrue(app.staticTexts["Push Day"].firstMatch.waitForExistence(timeout: 2))
+
+        let start = app.buttons["startTraining"]
+        XCTAssertTrue(start.waitForExistence(timeout: 3))
+        start.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(app.navigationBars["Push · The Gym"].waitForExistence(timeout: 5))
+
+        // Nothing is trained today with the past-only seed, so Bench Press
+        // opens the preview → logger flow with its history and coach advice.
+        let benchRow = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS 'Bench Press'")
+        ).firstMatch
+        XCTAssertTrue(benchRow.waitForExistence(timeout: 5))
+        benchRow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let startExercise = app.buttons["Start Exercise"].firstMatch
+        XCTAssertTrue(startExercise.waitForExistence(timeout: 3))
+        startExercise.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let logSet = app.buttons["Log Set 1"].firstMatch
+        XCTAssertTrue(logSet.waitForExistence(timeout: 3))
+        logSet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        sleep(1)
+        app.swipeUp()
+        let finish = app.buttons["Finish Exercise"].firstMatch
+        XCTAssertTrue(finish.waitForExistence(timeout: 3))
+        finish.tap()
+        sleep(1)
+
+        // Regression (day-switch bug): after finishing bench on a push
+        // session, the queue must still be the PUSH queue.
+        XCTAssertTrue(app.navigationBars["Push · The Gym"].waitForExistence(timeout: 5))
+        snap(app, "30_queue_still_push")
+
+        // Tapping the completed exercise opens the editor for today's session.
+        let doneLabel = app.staticTexts["Bench Press"].firstMatch
+        XCTAssertTrue(doneLabel.waitForExistence(timeout: 5))
+        doneLabel.tap()
+        XCTAssertTrue(app.staticTexts["Edit Session"].firstMatch.waitForExistence(timeout: 5))
+        snap(app, "31_edit_mid_session")
+        app.navigationBars.buttons.firstMatch.tap()
+        sleep(1)
+
+        // "Close" renders its full label (the old truncation bug) — the
+        // visual proof is snap 30; here just assert it's present.
+        XCTAssertTrue(app.buttons["Close"].firstMatch.exists)
+
+        // End the session through the summary — plain buttons, so no
+        // confirmation-dialog taps to go astray.
+        let finishSession = app.buttons["Finish Session"].firstMatch
+        XCTAssertTrue(finishSession.waitForExistence(timeout: 3))
+        finishSession.tap()
+        let done = app.buttons["Done"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5))
+        sleep(1)
+        done.tap()
+
+        // ---- Measurements ----
+        let bodyTab = app.tabBars.buttons["Body"]
+        XCTAssertTrue(bodyTab.waitForExistence(timeout: 5))
+        bodyTab.tap()
+        sleep(2)
+        snap(app, "32a_body_tab")
+        let measureSegment = app.buttons["Measure"].firstMatch
+        if measureSegment.waitForExistence(timeout: 5) {
+            measureSegment.tap()
+        } else if app.segmentedControls.buttons["Measure"].firstMatch.exists {
+            app.segmentedControls.buttons["Measure"].firstMatch.tap()
+        } else {
+            app.staticTexts["Measure"].firstMatch.tap()
+        }
+        sleep(1)
+        snap(app, "32_measure_empty")
+
+        // Each site card carries its own add button; scroll the waist card in.
+        let addWaist = app.buttons["Add Waist"].firstMatch
+        var swipes = 0
+        while (!addWaist.exists || !addWaist.isHittable) && swipes < 6 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(addWaist.isHittable)
+        addWaist.tap()
+        XCTAssertTrue(app.staticTexts["Log Measurement"].firstMatch.waitForExistence(timeout: 5))
+        let inches = app.textFields["Inches"]
+        XCTAssertTrue(inches.waitForExistence(timeout: 3))
+        inches.tap()
+        inches.typeText("34.5")
+        snap(app, "33_measure_form")
+        app.buttons["Save Measurement"].firstMatch.tap()
+        sleep(1)
+
+        // The waist card now leads with the new value.
+        XCTAssertTrue(app.staticTexts["34.5"].waitForExistence(timeout: 5))
+        snap(app, "34_measure_logged")
+
+        // Expand the card's entries and open one for editing, date included.
+        app.buttons["Waist entries"].firstMatch.tap()
+        sleep(1)
+        let entryRow = app.buttons.containing(
+            NSPredicate(format: "label CONTAINS '34.5 in'")
+        ).firstMatch
+        XCTAssertTrue(entryRow.waitForExistence(timeout: 3))
+        entryRow.tap()
+        XCTAssertTrue(app.staticTexts["Edit Measurement"].firstMatch.waitForExistence(timeout: 5))
+        snap(app, "35_measure_edit")
+        app.buttons["Cancel"].firstMatch.tap()
     }
 
     func testCaptureLightMode() throws {

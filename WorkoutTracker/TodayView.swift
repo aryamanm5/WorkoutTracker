@@ -10,8 +10,19 @@ struct TodayView: View {
     @Query private var workoutDays: [WorkoutDay]
     @Query(sort: \BodyWeightEntry.date, order: .reverse) private var weightEntries: [BodyWeightEntry]
 
+    /// Focus and location frozen at the moment "Start Training" is tapped.
+    /// The full-screen cover is keyed off this item, NOT the live
+    /// recommendation — otherwise logging the first exercise shifts the
+    /// coach's pick (those muscles are now fatigued) and the open session
+    /// would be rebuilt for a different day mid-workout.
+    struct SessionLaunch: Identifiable {
+        let id = UUID()
+        let focus: WorkoutType
+        let location: WorkoutLocation
+    }
+
     @State private var focusOverride: WorkoutType?
-    @State private var showingSession = false
+    @State private var sessionLaunch: SessionLaunch?
     @State private var showingWeightSheet = false
     @AppStorage("preferredLocation") private var preferredLocationRaw = WorkoutLocation.gym.rawValue
 
@@ -24,7 +35,13 @@ struct TodayView: View {
     }
 
     private var activeFocus: WorkoutType {
-        focusOverride ?? recommendation.type
+        if let focusOverride { return focusOverride }
+        // Already trained today? "Train More" continues that day instead of
+        // following the recommendation, which by now points somewhere fresher.
+        if let trainedType = todaysSessions.first?.exercise?.type, trainedType != .rest {
+            return trainedType
+        }
+        return recommendation.type
     }
 
     private var todaysSessions: [ExerciseSession] {
@@ -59,8 +76,8 @@ struct TodayView: View {
             .background(Color.appBackground.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
         }
-        .fullScreenCover(isPresented: $showingSession) {
-            ActiveSessionView(focus: activeFocus, location: trainingLocation)
+        .fullScreenCover(item: $sessionLaunch) { launch in
+            ActiveSessionView(focus: launch.focus, location: launch.location)
                 .themedPresentation()
         }
         .sheet(isPresented: $showingWeightSheet) {
@@ -91,7 +108,9 @@ struct TodayView: View {
                 .appLargeTitleStyle()
                 .foregroundColor(Color.appPrimaryText)
         }
-        .padding(.top, 12)
+        // Sits roughly where the other tabs' large navigation titles land,
+        // so switching tabs doesn't make the heading jump.
+        .padding(.top, 28)
     }
 
     // MARK: - Focus card
@@ -127,7 +146,7 @@ struct TodayView: View {
                 locationToggle
 
                 Button {
-                    showingSession = true
+                    sessionLaunch = SessionLaunch(focus: activeFocus, location: trainingLocation)
                 } label: {
                     Label(trainedToday ? "Train More" : "Start Training",
                           systemImage: "play.fill")

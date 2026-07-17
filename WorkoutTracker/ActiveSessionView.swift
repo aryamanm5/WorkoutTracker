@@ -52,17 +52,26 @@ struct ActiveSessionView: View {
                     }
 
                     ForEach(queue, id: \.persistentModelID) { exercise in
-                        NavigationLink {
-                            ExercisePreviewView(exercise: exercise, location: location) { session in
-                                exerciseFinished(session)
+                        // A finished exercise reopens for editing — fixing a
+                        // miscounted set shouldn't have to wait for the
+                        // session to end.
+                        if let todays = todaysSession(for: exercise) {
+                            NavigationLink {
+                                EditSessionView(session: todays)
+                            } label: {
+                                QueueRow(exercise: exercise, isDone: true)
                             }
-                        } label: {
-                            QueueRow(
-                                exercise: exercise,
-                                isDone: exercise.isCompletedToday
-                            )
+                            .hapticRow()
+                        } else {
+                            NavigationLink {
+                                ExercisePreviewView(exercise: exercise, location: location) { session in
+                                    exerciseFinished(session)
+                                }
+                            } label: {
+                                QueueRow(exercise: exercise, isDone: false)
+                            }
+                            .hapticRow()
                         }
-                        .hapticRow()
                     }
 
                     Button {
@@ -80,15 +89,18 @@ struct ActiveSessionView: View {
             .navigationTitle("\(focus.rawValue) · \(location.rawValue)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Plain button on purpose: a custom ButtonStyle on a toolbar
+                // item breaks the system's sizing and truncates the label
+                // ("Cl…"). Same rule everywhere a toolbar shows text.
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") {
+                        Haptics.shared.play(.tap)
                         if loggedSessions.isEmpty {
                             dismiss()
                         } else {
                             showingEndConfirm = true
                         }
                     }
-                    .hapticButton(.tap, pressScale: 1)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -162,6 +174,14 @@ struct ActiveSessionView: View {
             .formatted(.time(pattern: .minuteSecond))
     }
 
+    /// Today's logged session for an exercise (the latest, if it was trained
+    /// more than once) — the target when tapping a completed queue row.
+    private func todaysSession(for exercise: Exercise) -> ExerciseSession? {
+        exercise.sessions
+            .filter { Calendar.current.isDateInToday($0.date) }
+            .max { $0.date < $1.date }
+    }
+
     private func exerciseFinished(_ session: ExerciseSession) {
         loggedSessions.append(session)
 
@@ -223,7 +243,7 @@ private struct QueueRow: View {
                     }
                     .foregroundColor(adviceColor(advice.kind))
                 } else if isDone {
-                    Text("Logged today")
+                    Text("Logged today · tap to edit")
                         .appCaptionStyle()
                         .foregroundColor(Color.appSecondaryText)
                 }
@@ -932,8 +952,10 @@ struct ExerciseLoggerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Use") { showingPlates = false }
-                        .hapticButton(.tap, pressScale: 1)
+                    Button("Use") {
+                        Haptics.shared.play(.tap)
+                        showingPlates = false
+                    }
                 }
             }
         }
@@ -1154,8 +1176,10 @@ struct ExercisePickerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .hapticButton(.tap, pressScale: 1)
+                    Button("Cancel") {
+                        Haptics.shared.play(.tap)
+                        dismiss()
+                    }
                 }
             }
             .alert("New Exercise", isPresented: $showingCreate) {

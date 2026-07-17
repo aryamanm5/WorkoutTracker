@@ -8,7 +8,7 @@ struct WorkoutTrackerApp: App {
 
     init() {
         do {
-            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self, ProgressPhoto.self)
+            container = try ModelContainer(for: WorkoutDay.self, Exercise.self, ExerciseSession.self, LoggedSet.self, BodyWeightEntry.self, BodyMeasurement.self, ProgressPhoto.self)
             #if DEBUG
             resetDataIfRequested(context: container.mainContext)
             #endif
@@ -49,6 +49,7 @@ struct WorkoutTrackerApp: App {
         try? context.delete(model: Exercise.self)
         try? context.delete(model: WorkoutDay.self)
         try? context.delete(model: BodyWeightEntry.self)
+        try? context.delete(model: BodyMeasurement.self)
         try? context.delete(model: ProgressPhoto.self)
         try? context.save()
     }
@@ -62,10 +63,16 @@ struct WorkoutTrackerApp: App {
               let exercises = try? context.fetch(FetchDescriptor<Exercise>(sortBy: [SortDescriptor(\.name)])) else { return }
 
         let calendar = Calendar.current
+        // `-demoSeedPastOnly 1` keeps today untrained so UI tests can drive a
+        // fresh session with a deterministic focus.
+        let pastOnly = UserDefaults.standard.bool(forKey: "demoSeedPastOnly")
         for (index, exercise) in exercises.prefix(8).enumerated() {
             // Leave the last two exercises untrained today so the
             // "recovering" state is visible on the muscle map.
-            let schedule = index >= 6 ? [2, 4, 7, 9, 14] : [0, 2, 4, 7, 9, 14]
+            var schedule = index >= 6 ? [2, 4, 7, 9, 14] : [0, 2, 4, 7, 9, 14]
+            if pastOnly {
+                schedule.removeAll { $0 == 0 }
+            }
             for (sessionIndex, daysAgo) in schedule.enumerated() {
                 let date = calendar.date(byAdding: .day, value: -daysAgo, to: Date())!
                     .addingTimeInterval(Double(index) * 600)
@@ -100,6 +107,21 @@ struct WorkoutTrackerApp: App {
                 weight: 178 + Double(daysAgo) * 0.4
             )
             context.insert(entry)
+        }
+
+        // Six weekly tape measurements per site: waist trending down,
+        // everything else creeping up, quantized to quarter inches.
+        let measurementBases: [(MeasurementSite, Double)] = [
+            (.chest, 41), (.waist, 33.5), (.leftArm, 14.5),
+            (.rightArm, 14.75), (.leftQuad, 23), (.leftCalf, 15)
+        ]
+        for (site, base) in measurementBases {
+            for weeksAgo in 0..<6 {
+                let date = calendar.date(byAdding: .day, value: -weeksAgo * 7, to: Date())!
+                let drift = Double(weeksAgo) * (site == .waist ? 0.15 : -0.12)
+                let value = ((base + drift) * 4).rounded() / 4
+                context.insert(BodyMeasurement(date: date, site: site, value: value))
+            }
         }
         try? context.save()
     }

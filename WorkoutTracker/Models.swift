@@ -324,6 +324,55 @@ class LoggedSet {
     }
 }
 
+/// A body part you can put a tape measure around.
+enum MeasurementSite: String, CaseIterable, Identifiable, Codable {
+    case neck
+    case shoulders
+    case chest
+    case waist
+    case hips
+    case leftArm
+    case rightArm
+    case leftForearm
+    case rightForearm
+    case leftQuad
+    case rightQuad
+    case leftCalf
+    case rightCalf
+
+    var id: String { rawValue }
+
+    /// "leftArm" → "Left Arm": split the camelCase raw value and capitalize.
+    var displayName: String {
+        rawValue.reduce(into: "") { $0 += $1.isUppercase ? " \($1)" : String($1) }.capitalized
+    }
+
+    static func from(stored: String) -> MeasurementSite {
+        MeasurementSite(rawValue: stored) ?? .chest
+    }
+}
+
+/// One tape measurement of one site on one day, in inches.
+@Model
+class BodyMeasurement {
+    var date: Date
+    var siteRawValue: String
+    var value: Double
+    var notes: String
+
+    var site: MeasurementSite {
+        get { MeasurementSite.from(stored: siteRawValue) }
+        set { siteRawValue = newValue.rawValue }
+    }
+
+    init(date: Date, site: MeasurementSite, value: Double, notes: String = "") {
+        self.date = date
+        self.siteRawValue = site.rawValue
+        self.value = value
+        self.notes = notes
+    }
+}
+
 @Model
 class BodyWeightEntry {
     var date: Date
